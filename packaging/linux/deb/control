@@ -1,0 +1,9 @@
+Package: telemon-exporter
+Version: 0.1.0
+Section: net
+Priority: optional
+Architecture: amd64
+Maintainer: Telemon Maintainers <maintainers@example.invalid>
+Description: Native Prometheus exporter for LAN hardware telemetry
+ Telemon Exporter exposes Prometheus-compatible metrics for LAN hardware
+ monitoring. This package installs the native exporter and systemd service.

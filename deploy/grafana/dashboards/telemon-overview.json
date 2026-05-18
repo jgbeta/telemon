@@ -1,0 +1,321 @@
+{
+  "annotations": {
+    "list": []
+  },
+  "editable": true,
+  "fiscalYearStartMonth": 0,
+  "graphTooltip": 0,
+  "id": null,
+  "links": [],
+  "liveNow": false,
+  "panels": [
+    {
+      "datasource": {
+        "type": "prometheus",
+        "uid": "prometheus"
+      },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "short"
+        },
+        "overrides": []
+      },
+      "gridPos": {
+        "h": 8,
+        "w": 8,
+        "x": 0,
+        "y": 0
+      },
+      "id": 1,
+      "options": {
+        "colorMode": "value",
+        "graphMode": "none",
+        "justifyMode": "auto",
+        "orientation": "auto",
+        "reduceOptions": {
+          "calcs": [
+            "lastNotNull"
+          ],
+          "fields": "",
+          "values": false
+        },
+        "textMode": "auto"
+      },
+      "targets": [
+        {
+          "expr": "max by (user_name, device_name, device_uuid, instance) (up{job=~\"telemon-(15s|10s|5s|1s)\",user_name=~\"$user_name\",device_name=~\"$device_name\",machine_uuid=~\"$machine_uuid\",os=~\"$os\",device_uuid=~\"$device_uuid\"})",
+          "refId": "A"
+        }
+      ],
+      "title": "Exporter Up By Target",
+      "type": "stat"
+    },
+    {
+      "datasource": {
+        "type": "prometheus",
+        "uid": "prometheus"
+      },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "short"
+        },
+        "overrides": []
+      },
+      "gridPos": {
+        "h": 8,
+        "w": 8,
+        "x": 8,
+        "y": 0
+      },
+      "id": 2,
+      "options": {
+        "showHeader": true
+      },
+      "targets": [
+        {
+          "expr": "telemon_collector_up{user_name=~\"$user_name\",device_name=~\"$device_name\",machine_uuid=~\"$machine_uuid\",os=~\"$os\",device_uuid=~\"$device_uuid\"}",
+          "format": "table",
+          "instant": true,
+          "refId": "A"
+        },
+        {
+          "expr": "telemon_collector_supported{user_name=~\"$user_name\",device_name=~\"$device_name\",machine_uuid=~\"$machine_uuid\",os=~\"$os\",device_uuid=~\"$device_uuid\"}",
+          "format": "table",
+          "instant": true,
+          "refId": "B"
+        }
+      ],
+      "title": "Collector Status And Support",
+      "type": "table"
+    },
+    {
+      "datasource": {
+        "type": "prometheus",
+        "uid": "prometheus"
+      },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "short"
+        },
+        "overrides": []
+      },
+      "gridPos": {
+        "h": 8,
+        "w": 8,
+        "x": 0,
+        "y": 8
+      },
+      "id": 4,
+      "options": {
+        "showHeader": true
+      },
+      "targets": [
+        {
+          "expr": "telemon_build_info{user_name=~\"$user_name\",device_name=~\"$device_name\",machine_uuid=~\"$machine_uuid\",os=~\"$os\",device_uuid=~\"$device_uuid\"}",
+          "format": "table",
+          "instant": true,
+          "refId": "A"
+        }
+      ],
+      "title": "Build Info",
+      "type": "table"
+    },
+    {
+      "datasource": {
+        "type": "prometheus",
+        "uid": "prometheus"
+      },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "celsius"
+        },
+        "overrides": []
+      },
+      "gridPos": {
+        "h": 8,
+        "w": 8,
+        "x": 16,
+        "y": 0
+      },
+      "id": 3,
+      "options": {
+        "legend": {
+          "displayMode": "list",
+          "placement": "bottom",
+          "showLegend": true
+        },
+        "tooltip": {
+          "mode": "single",
+          "sort": "none"
+        }
+      },
+      "targets": [
+        {
+          "expr": "max by (device_name, user_name, device_uuid, instance, host, os) (telemon_temperature_celsius{user_name=~\"$user_name\",device_name=~\"$device_name\",machine_uuid=~\"$machine_uuid\",os=~\"$os\",device_uuid=~\"$device_uuid\"})",
+          "refId": "A"
+        }
+      ],
+      "title": "Hottest Temperature Where Available",
+      "type": "timeseries"
+    }
+  ],
+  "refresh": "15s",
+  "schemaVersion": 39,
+  "tags": [
+    "telemon"
+  ],
+  "templating": {
+    "list": [
+      {
+        "allValue": ".*",
+        "current": {
+          "selected": true,
+          "text": "All",
+          "value": "$__all"
+        },
+        "datasource": {
+          "type": "prometheus",
+          "uid": "prometheus"
+        },
+        "definition": "label_values(up{job=~\"telemon-(15s|10s|5s|1s)\"}, user_name)",
+        "hide": 0,
+        "includeAll": true,
+        "label": "User",
+        "multi": true,
+        "name": "user_name",
+        "options": [],
+        "query": {
+          "query": "label_values(up{job=~\"telemon-(15s|10s|5s|1s)\"}, user_name)",
+          "refId": "PrometheusVariableQueryEditor-VariableQuery"
+        },
+        "refresh": 1,
+        "regex": "",
+        "skipUrlSync": false,
+        "sort": 1,
+        "type": "query"
+      },
+      {
+        "allValue": ".*",
+        "current": {
+          "selected": true,
+          "text": "All",
+          "value": "$__all"
+        },
+        "datasource": {
+          "type": "prometheus",
+          "uid": "prometheus"
+        },
+        "definition": "label_values(up{job=~\"telemon-(15s|10s|5s|1s)\",user_name=~\"$user_name\"}, device_name)",
+        "hide": 0,
+        "includeAll": true,
+        "label": "Device",
+        "multi": true,
+        "name": "device_name",
+        "options": [],
+        "query": {
+          "query": "label_values(up{job=~\"telemon-(15s|10s|5s|1s)\",user_name=~\"$user_name\"}, device_name)",
+          "refId": "PrometheusVariableQueryEditor-VariableQuery"
+        },
+        "refresh": 1,
+        "regex": "",
+        "skipUrlSync": false,
+        "sort": 1,
+        "type": "query"
+      },
+      {
+        "allValue": ".*",
+        "current": {
+          "selected": true,
+          "text": "All",
+          "value": "$__all"
+        },
+        "datasource": {
+          "type": "prometheus",
+          "uid": "prometheus"
+        },
+        "definition": "label_values(up{job=~\"telemon-(15s|10s|5s|1s)\",user_name=~\"$user_name\",device_name=~\"$device_name\"}, machine_uuid)",
+        "hide": 0,
+        "includeAll": true,
+        "label": "Machine UUID",
+        "multi": true,
+        "name": "machine_uuid",
+        "options": [],
+        "query": {
+          "query": "label_values(up{job=~\"telemon-(15s|10s|5s|1s)\",user_name=~\"$user_name\",device_name=~\"$device_name\"}, machine_uuid)",
+          "refId": "PrometheusVariableQueryEditor-VariableQuery"
+        },
+        "refresh": 1,
+        "regex": "",
+        "skipUrlSync": false,
+        "sort": 1,
+        "type": "query"
+      },
+      {
+        "allValue": ".*",
+        "current": {
+          "selected": true,
+          "text": "All",
+          "value": "$__all"
+        },
+        "datasource": {
+          "type": "prometheus",
+          "uid": "prometheus"
+        },
+        "definition": "label_values(up{job=~\"telemon-(15s|10s|5s|1s)\",user_name=~\"$user_name\",device_name=~\"$device_name\",machine_uuid=~\"$machine_uuid\"}, os)",
+        "hide": 0,
+        "includeAll": true,
+        "label": "OS",
+        "multi": true,
+        "name": "os",
+        "options": [],
+        "query": {
+          "query": "label_values(up{job=~\"telemon-(15s|10s|5s|1s)\",user_name=~\"$user_name\",device_name=~\"$device_name\",machine_uuid=~\"$machine_uuid\"}, os)",
+          "refId": "PrometheusVariableQueryEditor-VariableQuery"
+        },
+        "refresh": 1,
+        "regex": "",
+        "skipUrlSync": false,
+        "sort": 1,
+        "type": "query"
+      },
+      {
+        "allValue": ".*",
+        "current": {
+          "selected": true,
+          "text": "All",
+          "value": "$__all"
+        },
+        "datasource": {
+          "type": "prometheus",
+          "uid": "prometheus"
+        },
+        "definition": "label_values(up{job=~\"telemon-(15s|10s|5s|1s)\",user_name=~\"$user_name\",device_name=~\"$device_name\",machine_uuid=~\"$machine_uuid\",os=~\"$os\"}, device_uuid)",
+        "hide": 0,
+        "includeAll": true,
+        "label": "Device UUID",
+        "multi": true,
+        "name": "device_uuid",
+        "options": [],
+        "query": {
+          "query": "label_values(up{job=~\"telemon-(15s|10s|5s|1s)\",user_name=~\"$user_name\",device_name=~\"$device_name\",machine_uuid=~\"$machine_uuid\",os=~\"$os\"}, device_uuid)",
+          "refId": "PrometheusVariableQueryEditor-VariableQuery"
+        },
+        "refresh": 1,
+        "regex": "",
+        "skipUrlSync": false,
+        "sort": 1,
+        "type": "query"
+      }
+    ]
+  },
+  "time": {
+    "from": "now-1h",
+    "to": "now"
+  },
+  "timepicker": {},
+  "timezone": "browser",
+  "title": "Telemon Overview",
+  "uid": "telemon-overview",
+  "version": 2,
+  "weekStart": ""
+}

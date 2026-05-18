@@ -1,0 +1,7 @@
+services:
+  registry:
+    build:
+      context: ..
+      dockerfile: deploy/registry/Dockerfile
+    image: telemon-registry:dev
+

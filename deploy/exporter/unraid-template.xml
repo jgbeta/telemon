@@ -1,0 +1,27 @@
+<?xml version="1.0"?>
+<Container version="2">
+  <Name>telemon-exporter</Name>
+  <Repository>telemon-exporter:dev</Repository>
+  <Registry/>
+  <Network>host</Network>
+  <Privileged>false</Privileged>
+  <Support/>
+  <Project/>
+  <Overview>Telemon host exporter for Prometheus. Uses host networking, persistent UUID state, and read-only host sysfs mounts.</Overview>
+  <Category>Tools:Utilities</Category>
+  <WebUI>http://[IP]:9185/metrics</WebUI>
+  <TemplateURL/>
+  <Icon/>
+  <ExtraParams/>
+  <PostArgs/>
+  <CPUset/>
+  <DateInstalled/>
+  <Config Name="Config and State" Target="/config" Default="/boot/config/plugins/telemon" Mode="rw" Description="Persistent config and UUID state." Type="Path" Display="always" Required="true" Mask="false">/boot/config/plugins/telemon</Config>
+  <Config Name="Host sysfs" Target="/host/sys" Default="/sys" Mode="ro" Description="Read-only host sysfs mount. Required because hwmon entries often symlink into /sys/devices." Type="Path" Display="always" Required="true" Mask="false">/sys</Config>
+  <Config Name="Registry Server" Target="TELEMON_REGISTRY_SERVER" Default="registry.example.local:9186" Mode="" Description="Registry server host:port." Type="Variable" Display="always" Required="true" Mask="false">registry.example.local:9186</Config>
+  <Config Name="Enrollment Token" Target="TELEMON_ENROLLMENT_TOKEN" Default="change-me" Mode="" Description="Shared enrollment token from the registry config." Type="Variable" Display="always" Required="true" Mask="true">change-me</Config>
+  <Config Name="User Name" Target="TELEMON_USER_NAME" Default="example-user" Mode="" Description="Human user label for Grafana filters." Type="Variable" Display="always" Required="true" Mask="false">example-user</Config>
+  <Config Name="Device Name" Target="TELEMON_DEVICE_NAME" Default="unraid" Mode="" Description="Human device label for Grafana filters." Type="Variable" Display="always" Required="true" Mask="false">unraid</Config>
+  <Config Name="Advertised Address" Target="TELEMON_ADVERTISED_ADDR" Default="" Mode="" Description="Unraid LAN IP Prometheus should scrape. Recommended for Unraid." Type="Variable" Display="always" Required="false" Mask="false"/>
+  <Config Name="Include Unknown hwmon Sensors" Target="TELEMON_LINUX_HWMON_INCLUDE_UNKNOWN" Default="true" Mode="" Description="Include sensors from hwmon chips that are not classified by the exporter yet. Recommended for Unraid/NAS hardware." Type="Variable" Display="always" Required="false" Mask="false">true</Config>
+</Container>

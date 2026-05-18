@@ -1,0 +1,16 @@
+[Unit]
+Description=Telemon Exporter
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=telemon
+Group=telemon
+ExecStart=/usr/bin/telemon-exporter run --config /etc/telemon/exporter.yml
+Restart=on-failure
+RestartSec=5s
+NoNewPrivileges=true
+
+[Install]
+WantedBy=multi-user.target

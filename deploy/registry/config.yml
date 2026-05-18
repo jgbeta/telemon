@@ -1,0 +1,8 @@
+registry:
+  listen: "0.0.0.0:9186"
+  storage_path: "/data/devices.json"
+  enrollment_token: "change-me"
+  device_stale_after_seconds: 120
+
+logging:
+  level: "info"

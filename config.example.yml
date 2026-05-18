@@ -1,0 +1,65 @@
+server:
+  #listen: "127.0.0.1:9185"
+  listen: "0.0.0.0:9185"
+  metrics_path: "/metrics"
+  static_metrics_path: "/metrics/static"
+
+identity:
+  user_name: ""
+  device_name: ""
+  machine_uuid: ""
+  machine_uuid_file: ""
+
+registration:
+  enabled: false
+  registry_addr: ""
+  enrollment_token: ""
+  device_id_file: ""
+  heartbeat_interval_seconds: 30
+  scrape_port: 9185
+  advertised_addr: ""
+
+collection:
+  scrape_cache_stale_after_seconds: 60
+  fake_interval_seconds: 5
+  temperature_interval_seconds: 15
+  sensor_rescan_interval_seconds: 300
+  gpu_interval_seconds: 15
+  static_info_interval_seconds: 300
+
+adaptive_sampling:
+  # Device-level only: each /metrics scrape still includes all enabled dynamic sensors.
+  # Prefer future downsampling/retention policy for long-term storage optimization.
+  enabled: true
+  levels:
+    normal_seconds: 15
+    warm_seconds: 10
+    hot_seconds: 5
+    critical_seconds: 1
+  temperature:
+    enabled: true
+    warm_celsius: 60
+    hot_celsius: 75
+    critical_celsius: 85
+  cooldown_seconds: 60
+
+collectors:
+  fake:
+    enabled: true
+
+  linux_hwmon:
+    enabled: true
+    root: "/sys/class/hwmon"
+    include_unknown_sensors: false
+    sensor_allowlist: []
+    sensor_denylist: []
+
+  nvidia_nvml:
+    enabled: true
+    library_paths: []
+    expose_gpu_name: true
+    expose_gpu_uuid: false
+    fan_speed_enabled: true
+
+logging:
+  level: "info"

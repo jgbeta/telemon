@@ -1,0 +1,33 @@
+[workspace]
+resolver = "2"
+members = [
+  "crates/telemon-cli",
+  "crates/telemon-core",
+  "crates/telemon-collectors",
+  "crates/telemon-exporter",
+  "crates/telemon-registry",
+]
+
+[workspace.package]
+version = "0.1.0"
+edition = "2021"
+
+[workspace.dependencies]
+anyhow = "1"
+clap = { version = ">=4, <4.5.58", features = ["derive"] }
+indexmap = ">=2, <2.13"
+libloading = ">=0.8, <0.9"
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+serde_yaml = "0.9"
+thiserror = "2"
+tokio = { version = "1", features = ["rt-multi-thread", "macros", "net", "io-util", "time", "signal", "sync"] }
+tracing = "0.1"
+tracing-subscriber = { version = "0.3", features = ["env-filter"] }
+uuid = { version = "=1.10.0", features = ["v4", "serde"] }
+windows-service = "0.6"
+
+telemon-core = { path = "crates/telemon-core" }
+telemon-collectors = { path = "crates/telemon-collectors" }
+telemon-exporter = { path = "crates/telemon-exporter" }
+telemon-registry = { path = "crates/telemon-registry" }

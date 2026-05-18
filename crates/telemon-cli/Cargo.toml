@@ -1,0 +1,16 @@
+[package]
+name = "telemon-cli"
+version.workspace = true
+edition.workspace = true
+
+[dependencies]
+anyhow.workspace = true
+clap.workspace = true
+telemon-exporter.workspace = true
+telemon-registry.workspace = true
+tokio.workspace = true
+
+[[bin]]
+name = "telemon"
+path = "src/main.rs"
+

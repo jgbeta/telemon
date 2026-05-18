@@ -1,0 +1,22 @@
+services:
+  exporter:
+    build:
+      context: ../..
+      dockerfile: deploy/exporter/Dockerfile
+    image: telemon-exporter:dev
+    container_name: telemon-exporter
+    restart: unless-stopped
+    network_mode: host
+    environment:
+      TELEMON_REGISTRY_SERVER: "registry.example.local:9186"
+      TELEMON_ENROLLMENT_TOKEN: "change-me"
+      TELEMON_USER_NAME: "example-user"
+      TELEMON_DEVICE_NAME: "linux-server"
+      TELEMON_ADVERTISED_ADDR: ""
+      TELEMON_LINUX_HWMON_INCLUDE_UNKNOWN: "true"
+    volumes:
+      - telemon_exporter_config:/config
+      - /sys:/host/sys:ro
+
+volumes:
+  telemon_exporter_config:

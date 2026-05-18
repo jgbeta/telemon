@@ -1,0 +1,14 @@
+/target/
+/debug-bundles/
+/dist/
+/telemon-rework.md
+/local-docs/
+/phases/
+/codex.md
+/architecture.md
+/docker-exporter-setup.md
+/recommended_repo_shape.txt
+/stored_data.txt
+/docs/phase*.md
+/docs/*plan*.md
+/docs/current-state-and-next-steps.md

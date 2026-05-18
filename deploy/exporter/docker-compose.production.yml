@@ -1,0 +1,26 @@
+services:
+  exporter:
+    image: ${TELEMON_EXPORTER_IMAGE:-ghcr.io/your-github-owner/telemon-exporter:edge}
+    container_name: telemon-exporter
+    restart: unless-stopped
+    network_mode: host
+    read_only: true
+    cap_drop:
+      - ALL
+    security_opt:
+      - no-new-privileges:true
+    environment:
+      TELEMON_LISTEN: "0.0.0.0:9185"
+      TELEMON_METRICS_PATH: "/metrics"
+      TELEMON_REGISTRY_SERVER: "${TELEMON_REGISTRY_SERVER:-registry.example.local:9186}"
+      TELEMON_ENROLLMENT_TOKEN: "${TELEMON_ENROLLMENT_TOKEN:-change-me}"
+      TELEMON_USER_NAME: "${TELEMON_USER_NAME:-example-user}"
+      TELEMON_DEVICE_NAME: "${TELEMON_DEVICE_NAME:-linux-server}"
+      TELEMON_ADVERTISED_ADDR: "${TELEMON_ADVERTISED_ADDR:-}"
+      TELEMON_SCRAPE_PORT: "9185"
+      TELEMON_HWMON_ROOT: "/host/sys/class/hwmon"
+      TELEMON_FAKE_ENABLED: "false"
+      TELEMON_LINUX_HWMON_INCLUDE_UNKNOWN: "${TELEMON_LINUX_HWMON_INCLUDE_UNKNOWN:-false}"
+    volumes:
+      - ${TELEMON_DOCKER_CONFIG_DIR:-/srv/telemon/exporter}:/config
+      - /sys:/host/sys:ro

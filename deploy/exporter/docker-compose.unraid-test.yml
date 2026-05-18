@@ -1,0 +1,29 @@
+services:
+  exporter:
+    build:
+      context: ../..
+      dockerfile: deploy/exporter/Dockerfile
+    image: telemon-exporter:unraid-test
+    container_name: telemon-exporter-docker-test
+    restart: unless-stopped
+    network_mode: host
+    read_only: true
+    cap_drop:
+      - ALL
+    security_opt:
+      - no-new-privileges:true
+    environment:
+      TELEMON_LISTEN: "0.0.0.0:9187"
+      TELEMON_METRICS_PATH: "/metrics"
+      TELEMON_REGISTRY_SERVER: "${TELEMON_REGISTRY_SERVER:-registry.example.local:9186}"
+      TELEMON_ENROLLMENT_TOKEN: "${TELEMON_ENROLLMENT_TOKEN:-change-me}"
+      TELEMON_USER_NAME: "${TELEMON_USER_NAME:-example-user}"
+      TELEMON_DEVICE_NAME: "${TELEMON_DEVICE_NAME:-unraid-docker}"
+      TELEMON_ADVERTISED_ADDR: "${TELEMON_ADVERTISED_ADDR:-}"
+      TELEMON_SCRAPE_PORT: "9187"
+      TELEMON_HWMON_ROOT: "/host/sys/class/hwmon"
+      TELEMON_FAKE_ENABLED: "false"
+      TELEMON_LINUX_HWMON_INCLUDE_UNKNOWN: "true"
+    volumes:
+      - ${TELEMON_DOCKER_CONFIG_DIR:-/boot/config/plugins/telemon-docker}:/config
+      - /sys:/host/sys:ro

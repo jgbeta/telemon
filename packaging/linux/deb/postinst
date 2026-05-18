@@ -1,0 +1,186 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+CONFIG_DIR="/etc/telemon"
+CONFIG_FILE="$CONFIG_DIR/exporter.yml"
+PROMETHEUS_IP_FILE="$CONFIG_DIR/prometheus-server-ip"
+STATE_DIR="/var/lib/telemon/exporter"
+
+configure_ufw_for_prometheus() {
+  local prometheus_ip="${TELEMON_PROMETHEUS_IP:-}"
+
+  if [ -z "$prometheus_ip" ]; then
+    return
+  fi
+
+  install -d -m 0755 "$CONFIG_DIR"
+  printf '%s\n' "$prometheus_ip" > "$PROMETHEUS_IP_FILE"
+  chmod 0644 "$PROMETHEUS_IP_FILE"
+
+  if ! command -v ufw >/dev/null 2>&1; then
+    echo "UFW not found; allow Prometheus manually: TCP 9185 from $prometheus_ip" >&2
+    return
+  fi
+
+  ufw allow from "$prometheus_ip" to any port 9185 proto tcp comment 'telemon prometheus scrape'
+  if ufw status 2>/dev/null | grep -q '^Status: active'; then
+    ufw reload
+  else
+    echo "UFW rule added, but UFW is inactive; not enabling UFW automatically" >&2
+  fi
+}
+
+sed_escape() {
+  printf '%s' "$1" | sed 's/[\/&|\\]/\\&/g'
+}
+
+update_config_value() {
+  local section="$1"
+  local key="$2"
+  local value
+  local mode="${4:-string}"
+  local temp_file
+  value="$(sed_escape "$3")"
+  temp_file="$(mktemp)"
+  awk -v section="$section" -v key="$key" -v value="$value" -v mode="$mode" '
+    /^[^[:space:]][^:]*:/ {
+      current = $1
+      sub(":", "", current)
+    }
+    current == section && $1 == key ":" {
+      if (mode == "raw") {
+        print "  " key ": " value
+      } else {
+        print "  " key ": \"" value "\""
+      }
+      next
+    }
+    { print }
+  ' "$CONFIG_FILE" > "$temp_file"
+  install -m 0644 "$temp_file" "$CONFIG_FILE"
+  rm -f "$temp_file"
+}
+
+ensure_config_key() {
+  local section="$1"
+  local key="$2"
+  local line="$3"
+  local temp_file
+
+  if awk -v section="$section" -v key="$key" '
+    /^[^[:space:]][^:]*:/ {
+      current = $1
+      sub(":", "", current)
+    }
+    current == section && $1 == key ":" {
+      found = 1
+    }
+    END {
+      exit found ? 0 : 1
+    }
+  ' "$CONFIG_FILE"; then
+    return
+  fi
+
+  temp_file="$(mktemp)"
+  awk -v section="$section" -v line="$line" '
+    /^[^[:space:]][^:]*:/ {
+      if (in_section && !inserted) {
+        print line
+        inserted = 1
+      }
+      current = $1
+      sub(":", "", current)
+      in_section = (current == section)
+    }
+    { print }
+    END {
+      if (in_section && !inserted) {
+        print line
+      }
+    }
+  ' "$CONFIG_FILE" > "$temp_file"
+  install -m 0644 "$temp_file" "$CONFIG_FILE"
+  rm -f "$temp_file"
+}
+
+ensure_registration_config_shape() {
+  if ! grep -q '^identity:' "$CONFIG_FILE"; then
+    cat >> "$CONFIG_FILE" <<'CONFIG'
+
+identity:
+  user_name: ""
+  device_name: ""
+CONFIG
+  fi
+
+  if ! grep -q '^registration:' "$CONFIG_FILE"; then
+    cat >> "$CONFIG_FILE" <<'CONFIG'
+
+registration:
+  enabled: false
+  registry_addr: ""
+  enrollment_token: ""
+  device_id_file: ""
+  heartbeat_interval_seconds: 30
+  scrape_port: 9185
+  advertised_addr: ""
+CONFIG
+  fi
+
+  ensure_config_key "registration" "advertised_addr" '  advertised_addr: ""'
+}
+
+configure_registration_config() {
+  local registry_server="${TELEMON_REGISTRY_SERVER:-}"
+  local enrollment_token="${TELEMON_ENROLLMENT_TOKEN:-}"
+  local user_name="${TELEMON_USER_NAME:-}"
+  local device_name="${TELEMON_DEVICE_NAME:-${HOSTNAME:-}}"
+  local advertised_addr="${TELEMON_ADVERTISED_ADDR:-}"
+
+  if [ -z "$registry_server" ]; then
+    return
+  fi
+
+  if [ -z "$enrollment_token" ] || [ -z "$user_name" ]; then
+    echo "registration not configured; TELEMON_REGISTRY_SERVER requires TELEMON_ENROLLMENT_TOKEN and TELEMON_USER_NAME" >&2
+    return
+  fi
+
+  update_config_value "identity" "user_name" "$user_name"
+  update_config_value "identity" "device_name" "$device_name"
+  update_config_value "registration" "enabled" "true" "raw"
+  update_config_value "registration" "registry_addr" "$registry_server"
+  update_config_value "registration" "enrollment_token" "$enrollment_token"
+  update_config_value "registration" "device_id_file" "$STATE_DIR/device-id"
+  if [ -n "$advertised_addr" ]; then
+    update_config_value "registration" "advertised_addr" "$advertised_addr"
+  fi
+
+  if [ -z "${TELEMON_PROMETHEUS_IP:-}" ]; then
+    TELEMON_PROMETHEUS_IP="${registry_server%%:*}"
+    export TELEMON_PROMETHEUS_IP
+  fi
+}
+
+if ! getent group telemon >/dev/null 2>&1; then
+  groupadd --system telemon
+fi
+
+if ! id -u telemon >/dev/null 2>&1; then
+  useradd --system --no-create-home --shell /usr/sbin/nologin --gid telemon telemon
+fi
+
+install -d -m 0755 "$CONFIG_DIR"
+install -d -m 0750 -o telemon -g telemon "$STATE_DIR"
+ensure_registration_config_shape
+configure_registration_config
+configure_ufw_for_prometheus
+
+if command -v systemctl >/dev/null 2>&1; then
+  systemctl daemon-reload || true
+  systemctl enable telemon-exporter.service || true
+  systemctl restart telemon-exporter.service || true
+fi
+
+exit 0

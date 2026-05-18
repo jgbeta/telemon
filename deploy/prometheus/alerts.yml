@@ -1,0 +1,56 @@
+groups:
+  - name: telemon-temperature
+    rules:
+      - alert: TelemonExporterDown
+        expr: up{job=~"telemon-(15s|10s|5s|1s)"} == 0
+        for: 2m
+        labels:
+          severity: warning
+        annotations:
+          summary: "Telemon exporter is down"
+          description: "Prometheus cannot scrape {{ $labels.device_name }} ({{ $labels.instance }})."
+
+      - alert: HighCpuTemperature
+        expr: max by (device_name, device_uuid, instance) (telemon_temperature_celsius{component="cpu"}) > 85
+        for: 5m
+        labels:
+          severity: warning
+        annotations:
+          summary: "High CPU temperature"
+          description: "CPU temperature on {{ $labels.device_name }} has been above 85 C for 5 minutes."
+
+      - alert: LinuxHwmonCollectorDown
+        expr: telemon_collector_up{collector="linux_hwmon"} == 0
+        for: 5m
+        labels:
+          severity: warning
+        annotations:
+          summary: "Linux hwmon collector is failing"
+          description: "linux_hwmon collector is failing on {{ $labels.device_name }}."
+
+      - alert: NvidiaCollectorUnavailable
+        expr: telemon_collector_supported{collector="nvidia_nvml"} == 0
+        for: 10m
+        labels:
+          severity: info
+        annotations:
+          summary: "NVIDIA NVML collector unavailable"
+          description: "NVML is unavailable on {{ $labels.device_name }}. This is expected on non-NVIDIA hosts."
+
+      - alert: NvidiaCollectorDown
+        expr: max by (device_name, device_uuid, instance, collector) (telemon_collector_supported{collector="nvidia_nvml"}) == 1 and max by (device_name, device_uuid, instance, collector) (telemon_collector_up{collector="nvidia_nvml"}) == 0
+        for: 5m
+        labels:
+          severity: warning
+        annotations:
+          summary: "NVIDIA NVML collector is failing"
+          description: "NVML loaded on {{ $labels.device_name }}, but the nvidia_nvml collector is failing."
+
+      - alert: HighNvidiaGpuTemperature
+        expr: max by (device_name, device_uuid, instance, gpu_index) (telemon_temperature_celsius{component="gpu",source="nvidia_nvml"}) > 82
+        for: 5m
+        labels:
+          severity: warning
+        annotations:
+          summary: "High NVIDIA GPU temperature"
+          description: "NVIDIA GPU {{ $labels.gpu_index }} on {{ $labels.device_name }} is above 82 C."

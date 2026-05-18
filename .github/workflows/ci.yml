@@ -1,0 +1,53 @@
+name: CI
+
+on:
+  push:
+    branches:
+      - main
+  pull_request:
+  workflow_dispatch:
+
+jobs:
+  rust:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v4
+
+      - name: Install Rust toolchain
+        uses: dtolnay/rust-toolchain@1.83.0
+        with:
+          components: rustfmt, clippy
+
+      - name: Check formatting
+        run: cargo fmt --check
+
+      - name: Run clippy
+        run: cargo clippy --workspace --all-targets -- -D warnings
+
+      - name: Run tests
+        run: cargo test --workspace
+
+      - name: Check packaging files
+        run: bash scripts/check-packaging-files.sh
+
+  compose:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v4
+
+      - name: Validate central compose
+        run: docker compose -f deploy/docker-compose.yml config
+
+      - name: Validate central local-build compose
+        run: docker compose -f deploy/docker-compose.yml -f deploy/docker-compose.local-build.yml config
+
+      - name: Validate exporter production compose
+        run: docker compose -f deploy/exporter/docker-compose.production.yml config
+
+      - name: Validate exporter dev compose
+        run: docker compose -f deploy/exporter/docker-compose.yml config
+
+      - name: Validate exporter side-by-side compose
+        run: docker compose -f deploy/exporter/docker-compose.unraid-test.yml config

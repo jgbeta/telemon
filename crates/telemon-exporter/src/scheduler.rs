@@ -1,0 +1,295 @@
+use std::collections::BTreeMap;
+use std::time::{Duration, Instant};
+
+use tokio::sync::watch;
+use tracing::{debug, error};
+
+use crate::adaptive::{self, AdaptiveInterval, AdaptiveSamplingState};
+use crate::cache::SharedMetricCache;
+use crate::diagnostics;
+use telemon_collectors::traits::Collector;
+use telemon_core::config::AdaptiveSamplingConfig;
+use telemon_core::metrics::model::MetricSample;
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum CollectorGroup {
+    Dynamic,
+    Static,
+}
+
+pub struct ScheduledCollector {
+    collector: Box<dyn Collector>,
+    interval: Duration,
+    group: CollectorGroup,
+    adaptive_interval: Option<AdaptiveInterval>,
+}
+
+impl ScheduledCollector {
+    pub fn new(collector: Box<dyn Collector>, interval: Duration) -> Self {
+        Self {
+            collector,
+            interval,
+            group: CollectorGroup::Dynamic,
+            adaptive_interval: None,
+        }
+    }
+
+    pub fn static_collector(collector: Box<dyn Collector>, interval: Duration) -> Self {
+        Self {
+            collector,
+            interval,
+            group: CollectorGroup::Static,
+            adaptive_interval: None,
+        }
+    }
+
+    pub fn adaptive(mut self, default_interval_seconds: u64) -> Self {
+        self.interval = Duration::from_secs(default_interval_seconds);
+        self.adaptive_interval = Some(AdaptiveInterval::new(default_interval_seconds));
+        self
+    }
+}
+
+pub async fn run_scheduler(
+    mut collectors: Vec<ScheduledCollector>,
+    dynamic_cache: SharedMetricCache,
+    static_cache: SharedMetricCache,
+    adaptive_config: AdaptiveSamplingConfig,
+    adaptive_state: AdaptiveSamplingState,
+    mut shutdown: watch::Receiver<bool>,
+) {
+    if collectors.is_empty() {
+        if let Ok(mut cache) = static_cache.write() {
+            cache.replace_snapshot(vec![diagnostics::build_info_metric()]);
+        }
+    }
+
+    let mut next_due = vec![Instant::now(); collectors.len()];
+    let mut latest_dynamic_by_collector: BTreeMap<&'static str, Vec<MetricSample>> =
+        BTreeMap::new();
+    let mut latest_static_by_collector: BTreeMap<&'static str, Vec<MetricSample>> = BTreeMap::new();
+    adaptive_state.set_requested_interval_seconds(adaptive_config.levels.normal_seconds);
+
+    loop {
+        if *shutdown.borrow() {
+            break;
+        }
+
+        let now = Instant::now();
+        let mut changed = false;
+
+        for (index, scheduled) in collectors.iter_mut().enumerate() {
+            if now >= next_due[index] {
+                let result = scheduled.collector.collect();
+                if result.success {
+                    debug!(
+                        collector = result.collector,
+                        duration_ms = result.duration.as_millis(),
+                        "collector completed"
+                    );
+                } else {
+                    error!(
+                        collector = result.collector,
+                        duration_ms = result.duration.as_millis(),
+                        error = result.error_message.as_deref().unwrap_or("unknown"),
+                        "collector failed"
+                    );
+                }
+
+                let metrics = result.metrics;
+                if let Some(interval) = &mut scheduled.adaptive_interval {
+                    let desired = adaptive::evaluate_requested_interval_seconds(
+                        &adaptive_config,
+                        metrics.as_slice(),
+                    );
+                    let current = interval.update(
+                        desired,
+                        Duration::from_secs(adaptive_config.cooldown_seconds),
+                    );
+                    scheduled.interval = Duration::from_secs(current);
+                }
+
+                let (dynamic_metrics, static_metrics) = match scheduled.group {
+                    CollectorGroup::Dynamic => split_static_metrics(metrics),
+                    CollectorGroup::Static => (Vec::new(), metrics),
+                };
+
+                match scheduled.group {
+                    CollectorGroup::Dynamic => {
+                        latest_dynamic_by_collector.insert(result.collector, dynamic_metrics);
+                        latest_static_by_collector.insert(result.collector, static_metrics);
+                    }
+                    CollectorGroup::Static => {
+                        latest_static_by_collector.insert(result.collector, static_metrics);
+                    }
+                }
+
+                next_due[index] = now + scheduled.interval;
+                changed = true;
+            }
+        }
+
+        if changed {
+            let requested_interval =
+                requested_interval_seconds(collectors.as_slice(), &adaptive_config);
+            adaptive_state.set_requested_interval_seconds(requested_interval);
+            let mut dynamic_snapshot = vec![adaptive::requested_scrape_interval_metric(
+                adaptive_state.requested_interval_seconds(),
+            )];
+            for metrics in latest_dynamic_by_collector.values() {
+                dynamic_snapshot.extend(metrics.clone());
+            }
+
+            let mut static_snapshot = vec![diagnostics::build_info_metric()];
+            for metrics in latest_static_by_collector.values() {
+                static_snapshot.extend(metrics.clone());
+            }
+
+            if let Ok(mut cache) = dynamic_cache.write() {
+                cache.replace_snapshot(dynamic_snapshot);
+            }
+            if let Ok(mut cache) = static_cache.write() {
+                cache.replace_snapshot(static_snapshot);
+            }
+        }
+
+        let delay = next_due
+            .iter()
+            .min()
+            .map(|next| next.saturating_duration_since(Instant::now()))
+            .unwrap_or_else(|| Duration::from_secs(60))
+            .min(Duration::from_secs(1));
+
+        tokio::select! {
+            _ = tokio::time::sleep(delay) => {}
+            changed = shutdown.changed() => {
+                if changed.is_err() || *shutdown.borrow() {
+                    break;
+                }
+            }
+        }
+    }
+}
+
+pub fn collect_snapshot_once(
+    collectors: &mut [ScheduledCollector],
+    adaptive_config: &AdaptiveSamplingConfig,
+) -> Vec<MetricSample> {
+    let mut dynamic_snapshot = vec![adaptive::requested_scrape_interval_metric(
+        adaptive_config.levels.normal_seconds,
+    )];
+    let mut static_snapshot = vec![diagnostics::build_info_metric()];
+
+    for scheduled in collectors {
+        let result = scheduled.collector.collect();
+        if !result.success {
+            error!(
+                collector = result.collector,
+                error = result.error_message.as_deref().unwrap_or("unknown"),
+                "collector failed"
+            );
+        }
+        let mut metrics = result.metrics;
+        if scheduled.adaptive_interval.is_some() {
+            let requested =
+                adaptive::evaluate_requested_interval_seconds(adaptive_config, metrics.as_slice());
+            dynamic_snapshot[0] = adaptive::requested_scrape_interval_metric(requested);
+        }
+
+        match scheduled.group {
+            CollectorGroup::Dynamic => {
+                let (mut dynamic_metrics, mut static_metrics) = split_static_metrics(metrics);
+                dynamic_snapshot.append(&mut dynamic_metrics);
+                static_snapshot.append(&mut static_metrics);
+            }
+            CollectorGroup::Static => static_snapshot.append(&mut metrics),
+        }
+    }
+
+    let mut snapshot = dynamic_snapshot;
+    snapshot.extend(static_snapshot);
+    snapshot
+}
+
+fn split_static_metrics(metrics: Vec<MetricSample>) -> (Vec<MetricSample>, Vec<MetricSample>) {
+    let mut dynamic_metrics = Vec::new();
+    let mut static_metrics = Vec::new();
+
+    for metric in metrics {
+        if is_static_metric(&metric) {
+            static_metrics.push(metric);
+        } else {
+            dynamic_metrics.push(metric);
+        }
+    }
+
+    (dynamic_metrics, static_metrics)
+}
+
+fn is_static_metric(metric: &MetricSample) -> bool {
+    matches!(
+        metric.name.as_str(),
+        telemon_core::metrics::names::COLLECTOR_SUPPORTED
+            | telemon_core::metrics::names::GPU_INFO
+            | telemon_core::metrics::names::GPU_MEMORY_TOTAL_BYTES
+            | telemon_core::metrics::names::TEMPERATURE_LIMIT_CELSIUS
+    )
+}
+
+fn requested_interval_seconds(
+    collectors: &[ScheduledCollector],
+    adaptive_config: &AdaptiveSamplingConfig,
+) -> u64 {
+    if !adaptive_config.enabled {
+        return adaptive_config.levels.normal_seconds;
+    }
+
+    collectors
+        .iter()
+        .filter_map(|collector| {
+            collector
+                .adaptive_interval
+                .as_ref()
+                .map(AdaptiveInterval::current_seconds)
+        })
+        .min()
+        .unwrap_or(adaptive_config.levels.normal_seconds)
+}
+
+#[cfg(test)]
+mod tests {
+    use std::time::Instant;
+
+    use telemon_collectors::traits::{Collector, CollectorResult};
+
+    use super::*;
+
+    struct FailingCollector;
+
+    impl Collector for FailingCollector {
+        fn name(&self) -> &'static str {
+            "failing"
+        }
+
+        fn collect(&mut self) -> CollectorResult {
+            CollectorResult::failure(self.name(), "expected failure", 1, Instant::now())
+        }
+    }
+
+    #[test]
+    fn failed_collector_does_not_prevent_snapshot() {
+        let mut collectors = vec![ScheduledCollector::new(
+            Box::new(FailingCollector),
+            Duration::from_secs(1),
+        )];
+
+        let snapshot = collect_snapshot_once(&mut collectors, &AdaptiveSamplingConfig::default());
+
+        assert!(snapshot
+            .iter()
+            .any(|sample| sample.name == telemon_core::metrics::names::BUILD_INFO));
+        assert!(snapshot
+            .iter()
+            .any(|sample| sample.name == telemon_core::metrics::names::COLLECTOR_UP));
+    }
+}

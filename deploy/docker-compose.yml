@@ -1,0 +1,52 @@
+services:
+  registry:
+    image: ${TELEMON_REGISTRY_IMAGE:-ghcr.io/your-github-owner/telemon-registry:edge}
+    container_name: telemon-registry
+    restart: unless-stopped
+    ports:
+      - "9186:9186"
+    command:
+      - "run"
+      - "--config"
+      - "/etc/telemon/registry.yml"
+    volumes:
+      - registry_data:/data
+      - ./registry/config.yml:/etc/telemon/registry.yml:ro
+
+  prometheus:
+    image: prom/prometheus
+    container_name: telemon-prometheus
+    restart: unless-stopped
+    ports:
+      - "9090:9090"
+    command:
+      - "--config.file=/etc/prometheus/prometheus.yml"
+      - "--storage.tsdb.path=/prometheus"
+      - "--storage.tsdb.retention.time=90d"
+      - "--storage.tsdb.retention.size=20GB"
+    volumes:
+      - prometheus_data:/prometheus
+      - ./prometheus:/etc/prometheus:ro
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+    depends_on:
+      - registry
+
+  grafana:
+    image: grafana/grafana-oss
+    container_name: telemon-grafana
+    restart: unless-stopped
+    ports:
+      - "3000:3000"
+    environment:
+      - GF_SECURITY_ADMIN_USER=admin
+      - GF_SECURITY_ADMIN_PASSWORD=change-me
+    volumes:
+      - grafana_data:/var/lib/grafana
+      - ./grafana/provisioning:/etc/grafana/provisioning:ro
+      - ./grafana/dashboards:/var/lib/grafana/dashboards:ro
+
+volumes:
+  registry_data:
+  prometheus_data:
+  grafana_data:

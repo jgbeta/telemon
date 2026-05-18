@@ -1,0 +1,12 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+ACTION="${1:-remove}"
+
+if command -v systemctl >/dev/null 2>&1; then
+  if [ "$ACTION" = "remove" ] || [ "$ACTION" = "deconfigure" ] || [ "$ACTION" = "upgrade" ]; then
+    systemctl stop telemon-exporter.service >/dev/null 2>&1 || true
+  fi
+fi
+
+exit 0

@@ -1,0 +1,77 @@
+# Prometheus Metrics Catalog
+
+This catalog describes the current Prometheus series produced by
+`telemon-exporter` and the registry service-discovery labels Prometheus
+adds during scraping.
+
+## Scrape Jobs And Target Labels
+
+Prometheus scrapes dynamic telemetry from `/metrics` through device-level
+adaptive jobs:
+
+- `telemon-15s`
+- `telemon-10s`
+- `telemon-5s`
+- `telemon-1s`
+
+Prometheus scrapes low-change metadata from `/metrics/static` through:
+
+- `telemon-static`
+
+The registry adds these labels to discovered targets, so Prometheus stores them
+on scraped series:
+
+| Label | Source | Notes |
+| --- | --- | --- |
+| `job` | Prometheus scrape job | One of the dynamic jobs or `telemon-static`. |
+| `instance` | Prometheus target | `<host>:<port>` returned by registry service discovery. |
+| `device_uuid` | Registry | Opaque UUID assigned during enrollment. |
+| `machine_uuid` | Client/registry | Stable physical-machine identity; can be shared across dual-boot installs. |
+| `device_name` | Client/registry | Human device label. |
+| `user_name` | Client/registry | Human user label. |
+| `host` | Registry | Currently mirrors `device_name`. |
+| `os` | Client/registry | Rust target OS string such as `linux`. |
+| `os_version` | Client/registry | OS display string where available. |
+| `arch` | Client/registry | Rust target architecture such as `x86_64`. |
+| `requested_scrape_interval_seconds` | Client/registry | Current device-level adaptive scrape bucket. |
+
+Prometheus target labels are the canonical labels for Grafana filtering. Some
+static info metrics also emit overlapping labels directly. With Prometheus'
+default `honor_labels: false`, conflicting scraped labels can be renamed to
+`exported_<label>` while the registry target labels remain canonical.
+
+## Metric Families
+
+| Metric | Type | Endpoint | Source | Exporter labels | Notes |
+| --- | --- | --- | --- | --- | --- |
+| `up` | gauge | all telemon scrape jobs | Prometheus | target labels | Prometheus-generated scrape success metric; value is `1` when the last scrape succeeded. |
+| `telemon_build_info` | gauge | `/metrics/static` | exporter | `version`, `os`, `arch` | Build metadata; value is always `1`. |
+| `telemon_device_info` | gauge | `/metrics/static` | registration | `device_uuid`, `machine_uuid`, `user_name`, `device_name`, `os`, `os_version`, `arch` | Emitted only when registration is enabled and a device UUID exists; value is always `1`. |
+| `telemon_requested_scrape_interval_seconds` | gauge | `/metrics` | adaptive scheduler | none | Exporter-requested device-level scrape interval. |
+| `telemon_collector_up` | gauge | `/metrics` | all collectors | `collector` | `1` when collector is healthy in the last run, otherwise `0`. |
+| `telemon_collector_supported` | gauge | `/metrics/static` | all collectors | `collector` | `1` when collector is supported on the host, otherwise `0`. |
+| `telemon_collector_errors_total` | counter | `/metrics` | all collectors | `collector` | Total collector errors observed by the exporter process. |
+| `telemon_collector_last_success_timestamp_seconds` | gauge | `/metrics` | all collectors | `collector` | Unix timestamp of last successful collector run. |
+| `telemon_collector_samples` | gauge | `/metrics` | `linux_hwmon` | `collector`, `kind` | Useful sample count from the last collection run; currently `kind="temperature"`. |
+| `telemon_hwmon_chips_discovered` | gauge | `/metrics` | `linux_hwmon` | `collector` | Number of Linux hwmon chip directories discovered. |
+| `telemon_hwmon_temperature_inputs_discovered` | gauge | `/metrics` | `linux_hwmon` | `collector` | Number of Linux hwmon `temp*_input` files discovered before filtering. |
+| `telemon_temperature_celsius` | gauge | `/metrics` | `fake`, `linux_hwmon`, `nvidia_nvml` | `component`, `sensor`, `source`, optional `gpu_index` | Dynamic temperature readings. |
+| `telemon_temperature_limit_celsius` | gauge | `/metrics/static` | `linux_hwmon` | `component`, `sensor`, `source`, `limit` | Static-ish warning/critical temperature thresholds where available. |
+| `telemon_gpu_info` | gauge | `/metrics/static` | `nvidia_nvml` | `gpu_index`, `vendor`, `source`, optional `name`, optional `uuid` | NVIDIA GPU identity; value is always `1`. |
+| `telemon_gpu_utilization_ratio` | gauge | `/metrics` | `nvidia_nvml` | `gpu_index`, `source`, `engine` | Ratio from `0` to `1`; `engine` is `graphics` or `memory`. |
+| `telemon_gpu_memory_total_bytes` | gauge | `/metrics/static` | `nvidia_nvml` | `gpu_index`, `source` | Static-ish total VRAM bytes. |
+| `telemon_gpu_memory_used_bytes` | gauge | `/metrics` | `nvidia_nvml` | `gpu_index`, `source` | Used VRAM bytes. |
+| `telemon_gpu_memory_free_bytes` | gauge | `/metrics` | `nvidia_nvml` | `gpu_index`, `source` | Free VRAM bytes. |
+| `telemon_fan_speed_ratio` | gauge | `/metrics` | `nvidia_nvml` | `component`, `gpu_index`, `source` | Ratio from `0` to `1`; emitted only when fan speed is available and enabled. |
+
+## Current Cardinality Notes
+
+- Full dynamic scrapes include all enabled dynamic sensor metrics for a device.
+- Sensor-level cardinality is mostly driven by `component`, `sensor`, `source`,
+  and `gpu_index`.
+- `telemon_gpu_info{name=...}` is enabled by default; GPU UUID labels are
+  opt-in through `collectors.nvidia_nvml.expose_gpu_uuid`.
+- `telemon_device_info` and `telemon_build_info` can overlap with
+  registry target labels. Prefer registry labels for dashboard filters.
+- Long-term storage optimization should be handled later through downsampling
+  or retention policy, not per-sensor scrape scheduling.
