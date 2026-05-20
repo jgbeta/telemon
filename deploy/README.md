@@ -418,7 +418,7 @@ sudo bash install.sh --artifact dist/current/telemon-exporter-v<version>-linux-<
 ```
 
 Windows and macOS installers also support `-PrometheusServerIp` and
-`--prometheus-server-ip` respectively.
+`--prometheus-server-ip` respectively. Installer-created firewall rules are recorded by the native installers and removed by their uninstall paths; manually-created test rules remain user-managed.
 
 Grafana shows no data:
 

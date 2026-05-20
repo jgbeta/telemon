@@ -15,6 +15,7 @@ STATE_DIR="/var/lib/telemon/exporter"
 TARGET_BINARY="/usr/local/bin/telemon-exporter"
 PERSISTENT_BINARY=""
 PROMETHEUS_IP_FILE="$CONFIG_DIR/prometheus-server-ip"
+PROMETHEUS_FIREWALL_FILE="$CONFIG_DIR/prometheus-firewall-rule"
 UNIT_FILE="/etc/systemd/system/${SERVICE_NAME}.service"
 
 UNRAID_DIR="/boot/config/plugins/telemon"
@@ -68,7 +69,7 @@ Options:
   --device-name NAME               Human device label; defaults to hostname.
   --machine-uuid UUID              Physical machine UUID shared by multi-OS installs.
   --advertised-addr HOST_OR_IP     Scrape host/IP published to Prometheus SD.
-  --prometheus-server-ip IP        Source allowed to scrape TCP 9185.
+  --prometheus-server-ip IP        Source allowed to scrape the exporter TCP port.
   --force-config                   Replace existing exporter.yml with defaults.
   --dry-run                        Resolve inputs and print planned paths without installing.
   --help, -h                       Show this help.
@@ -198,6 +199,7 @@ detect_environment() {
     TARGET_BINARY="/usr/local/bin/telemon-exporter"
     PERSISTENT_BINARY="$CONFIG_DIR/telemon-exporter"
     PROMETHEUS_IP_FILE="$CONFIG_DIR/prometheus-server-ip"
+    PROMETHEUS_FIREWALL_FILE="$CONFIG_DIR/prometheus-firewall-rule"
     RUN_SCRIPT="$CONFIG_DIR/run-telemon-exporter.sh"
     RUN_SCRIPT_ALIAS="$CONFIG_DIR/exporter.sh"
     log "detected Unraid-like environment; using persistent state at $CONFIG_DIR and runtime binary at $TARGET_BINARY"
@@ -690,19 +692,86 @@ RUNNER
   fi
 }
 
-configure_ufw_for_prometheus() {
-  local prometheus_ip="$1"
-  [ -n "$prometheus_ip" ] || return 0
+firewall_scrape_port() {
+  local port
+  port="$(awk '
+    /^[^[:space:]][^:]*:/ {
+      current = $1
+      sub(":", "", current)
+    }
+    current == "registration" && $1 == "scrape_port:" {
+      print $2
+    }
+  ' "$CONFIG_FILE" 2>/dev/null | tail -n 1)"
 
+  case "$port" in
+    ''|*[!0-9]*|0)
+      printf '9185\n'
+      ;;
+    *)
+      printf '%s\n' "$port"
+      ;;
+  esac
+}
+
+write_firewall_state() {
+  local prometheus_ip="$1"
+  local scrape_port="$2"
+  local managed="$3"
+
+  install -d -m 0755 "$CONFIG_DIR"
   printf '%s\n' "$prometheus_ip" > "$PROMETHEUS_IP_FILE"
   chmod 0644 "$PROMETHEUS_IP_FILE"
+  cat > "$PROMETHEUS_FIREWALL_FILE" <<STATE
+backend=ufw
+source_ip=$prometheus_ip
+port=$scrape_port
+managed=$managed
+STATE
+  chmod 0644 "$PROMETHEUS_FIREWALL_FILE"
+}
+
+firewall_value() {
+  local key="$1"
+  awk -F= -v key="$key" '$1 == key { print substr($0, length(key) + 2) }' "$PROMETHEUS_FIREWALL_FILE" 2>/dev/null | tail -n 1
+}
+
+previous_firewall_rule_was_managed() {
+  local prometheus_ip="$1"
+  local scrape_port="$2"
+
+  [ -f "$PROMETHEUS_FIREWALL_FILE" ] || return 1
+  [ "$(firewall_value source_ip)" = "$prometheus_ip" ] || return 1
+  [ "$(firewall_value port)" = "$scrape_port" ] || return 1
+  [ "$(firewall_value managed)" = "true" ] || return 1
+}
+
+configure_ufw_for_prometheus() {
+  local prometheus_ip="$1"
+  local scrape_port output managed
+  [ -n "$prometheus_ip" ] || return 0
+
+  scrape_port="$(firewall_scrape_port)"
 
   if ! command -v ufw >/dev/null 2>&1; then
-    warn "UFW not found; allow Prometheus manually: TCP 9185 from $prometheus_ip"
+    warn "UFW not found; allow Prometheus manually: TCP $scrape_port from $prometheus_ip"
     return 0
   fi
 
-  ufw allow from "$prometheus_ip" to any port 9185 proto tcp comment 'telemon prometheus scrape'
+  output="$(ufw allow from "$prometheus_ip" to any port "$scrape_port" proto tcp comment 'telemon prometheus scrape' 2>&1)"
+  printf '%s\n' "$output"
+  managed="true"
+  case "$output" in
+    *'Skipping adding existing rule'*)
+      if previous_firewall_rule_was_managed "$prometheus_ip" "$scrape_port"; then
+        managed="true"
+      else
+        managed="false"
+      fi
+      ;;
+  esac
+  write_firewall_state "$prometheus_ip" "$scrape_port" "$managed"
+
   if ufw status 2>/dev/null | grep -q '^Status: active'; then
     ufw reload
   else

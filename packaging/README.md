@@ -27,6 +27,8 @@ Phase 3 package targets:
 - macOS: LaunchDaemon skeleton and shell install/uninstall scripts.
 
 Installers can optionally add a source-restricted firewall allow rule for the
-Prometheus server IP so Prometheus can scrape TCP `9185`.
+Prometheus server IP so Prometheus can scrape the exporter port, defaulting to
+TCP `9185`. Linux installers record the source and port they changed so
+uninstall can remove the Telemon-managed rule.
 
 RPM, MSI, package signing, Windows hardware collectors, and macOS thermal collection are deferred to later phases.

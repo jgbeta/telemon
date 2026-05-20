@@ -218,7 +218,7 @@ Prometheus cannot scrape:
 
 - Confirm the exporter listens on TCP `9185`.
 - Confirm the client firewall allows the monitoring server.
-- Use `--prometheus-server-ip <server-ip>` on UFW-based systems.
+- Use `--prometheus-server-ip <server-ip>` on UFW-based systems. Installer-managed UFW rules are recorded under `/etc/telemon` and removed by the Linux uninstall path; manually-created firewall rules must be removed manually.
 - Check `/prometheus/sd` on the registry for `device_uuid`, `user_name`, and
   `device_name` labels.
 - Check `/prometheus/sd/15s`, `/prometheus/sd/5s`, and `/prometheus/sd/1s` if
