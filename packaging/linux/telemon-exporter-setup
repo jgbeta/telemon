@@ -1,0 +1,464 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+CONFIG_DIR="/etc/telemon"
+CONFIG_FILE="$CONFIG_DIR/exporter.yml"
+PROMETHEUS_IP_FILE="$CONFIG_DIR/prometheus-server-ip"
+PROMETHEUS_FIREWALL_FILE="$CONFIG_DIR/prometheus-firewall-rule"
+STATE_DIR="/var/lib/telemon/exporter"
+SERVICE_NAME="telemon-exporter.service"
+
+log() {
+  printf '[telemon] %s\n' "$*"
+}
+
+warn() {
+  printf '[telemon] warning: %s\n' "$*" >&2
+}
+
+die() {
+  printf '[telemon] error: %s\n' "$*" >&2
+  exit 1
+}
+
+require_root() {
+  if [ "$(id -u)" -ne 0 ]; then
+    die "telemon-exporter-setup must be run as root"
+  fi
+}
+
+default_user_name() {
+  if [ -n "${SUDO_USER:-}" ] && [ "${SUDO_USER:-}" != "root" ]; then
+    printf '%s\n' "$SUDO_USER"
+  else
+    id -un
+  fi
+}
+
+default_device_name() {
+  local value
+  value="$(hostname 2>/dev/null || true)"
+  if [ -n "$value" ]; then
+    printf '%s\n' "$value"
+  else
+    printf 'unknown-device\n'
+  fi
+}
+
+registry_host() {
+  local value="$1"
+  value="${value#http://}"
+  value="${value%%/*}"
+  printf '%s\n' "${value%%:*}"
+}
+
+read_config_value() {
+  local section="$1"
+  local key="$2"
+  [ -f "$CONFIG_FILE" ] || return 0
+  awk -v section="$section" -v key="$key" '
+    /^[^[:space:]][^:]*:/ {
+      current = $1
+      sub(":", "", current)
+    }
+    current == section && $1 == key ":" {
+      $1 = ""
+      value = $0
+      sub(/^[[:space:]]*/, "", value)
+      gsub(/^"|"$/, "", value)
+      print value
+    }
+  ' "$CONFIG_FILE" | tail -n 1
+}
+
+sed_escape() {
+  printf '%s' "$1" | sed 's/[\/&|\\]/\\&/g'
+}
+
+update_config_value() {
+  local section="$1"
+  local key="$2"
+  local value
+  local mode="${4:-string}"
+  local temp_file
+  value="$(sed_escape "$3")"
+  temp_file="$(mktemp)"
+  awk -v section="$section" -v key="$key" -v value="$value" -v mode="$mode" '
+    /^[^[:space:]][^:]*:/ {
+      current = $1
+      sub(":", "", current)
+    }
+    current == section && $1 == key ":" {
+      if (mode == "raw") {
+        print "  " key ": " value
+      } else {
+        print "  " key ": \"" value "\""
+      }
+      next
+    }
+    { print }
+  ' "$CONFIG_FILE" > "$temp_file"
+  install -m 0644 "$temp_file" "$CONFIG_FILE"
+  rm -f "$temp_file"
+}
+
+ensure_config_key() {
+  local section="$1"
+  local key="$2"
+  local line="$3"
+  local temp_file
+
+  if awk -v section="$section" -v key="$key" '
+    /^[^[:space:]][^:]*:/ {
+      current = $1
+      sub(":", "", current)
+    }
+    current == section && $1 == key ":" {
+      found = 1
+    }
+    END {
+      exit found ? 0 : 1
+    }
+  ' "$CONFIG_FILE"; then
+    return 0
+  fi
+
+  temp_file="$(mktemp)"
+  awk -v section="$section" -v line="$line" '
+    /^[^[:space:]][^:]*:/ {
+      if (in_section && !inserted) {
+        print line
+        inserted = 1
+      }
+      current = $1
+      sub(":", "", current)
+      in_section = (current == section)
+    }
+    { print }
+    END {
+      if (in_section && !inserted) {
+        print line
+      }
+    }
+  ' "$CONFIG_FILE" > "$temp_file"
+  install -m 0644 "$temp_file" "$CONFIG_FILE"
+  rm -f "$temp_file"
+}
+
+write_fallback_config() {
+  cat > "$CONFIG_FILE" <<'CONFIG'
+server:
+  listen: "0.0.0.0:9185"
+  metrics_path: "/metrics"
+  static_metrics_path: "/metrics/static"
+
+identity:
+  user_name: ""
+  device_name: ""
+  machine_uuid: ""
+  machine_uuid_file: ""
+
+registration:
+  enabled: false
+  registry_addr: ""
+  enrollment_token: ""
+  device_id_file: ""
+  heartbeat_interval_seconds: 30
+  scrape_port: 9185
+  advertised_addr: ""
+
+collection:
+  scrape_cache_stale_after_seconds: 60
+  temperature_interval_seconds: 15
+  sensor_rescan_interval_seconds: 300
+  gpu_interval_seconds: 15
+  static_info_interval_seconds: 300
+
+adaptive_sampling:
+  enabled: true
+  levels:
+    normal_seconds: 15
+    warm_seconds: 10
+    hot_seconds: 5
+    critical_seconds: 1
+  temperature:
+    enabled: true
+    warm_celsius: 60
+    hot_celsius: 75
+    critical_celsius: 85
+  cooldown_seconds: 60
+
+collectors:
+  linux_hwmon:
+    enabled: true
+    root: "/sys/class/hwmon"
+    include_unknown_sensors: false
+    nvme_enrichment_enabled: true
+    expose_storage_model: true
+    sensor_allowlist: []
+    sensor_denylist: []
+  nvidia_nvml:
+    enabled: true
+    library_paths: []
+    expose_gpu_name: true
+    expose_gpu_uuid: false
+    fan_speed_enabled: true
+
+logging:
+  level: "info"
+CONFIG
+  chmod 0644 "$CONFIG_FILE"
+}
+
+ensure_registration_config_shape() {
+  install -d -m 0755 "$CONFIG_DIR"
+  if [ ! -f "$CONFIG_FILE" ]; then
+    write_fallback_config
+  fi
+
+  if ! grep -q '^identity:' "$CONFIG_FILE"; then
+    cat >> "$CONFIG_FILE" <<'CONFIG'
+
+identity:
+  user_name: ""
+  device_name: ""
+  machine_uuid: ""
+  machine_uuid_file: ""
+CONFIG
+  fi
+
+  if ! grep -q '^registration:' "$CONFIG_FILE"; then
+    cat >> "$CONFIG_FILE" <<'CONFIG'
+
+registration:
+  enabled: false
+  registry_addr: ""
+  enrollment_token: ""
+  device_id_file: ""
+  heartbeat_interval_seconds: 30
+  scrape_port: 9185
+  advertised_addr: ""
+CONFIG
+  fi
+
+  ensure_config_key "identity" "machine_uuid" '  machine_uuid: ""'
+  ensure_config_key "identity" "machine_uuid_file" '  machine_uuid_file: ""'
+  ensure_config_key "registration" "advertised_addr" '  advertised_addr: ""'
+}
+
+firewall_scrape_port() {
+  local port
+  port="$(read_config_value registration scrape_port)"
+  case "$port" in
+    ''|*[!0-9]*|0)
+      printf '9185\n'
+      ;;
+    *)
+      printf '%s\n' "$port"
+      ;;
+  esac
+}
+
+write_firewall_state() {
+  local prometheus_ip="$1"
+  local scrape_port="$2"
+  local managed="$3"
+
+  install -d -m 0755 "$CONFIG_DIR"
+  printf '%s\n' "$prometheus_ip" > "$PROMETHEUS_IP_FILE"
+  chmod 0644 "$PROMETHEUS_IP_FILE"
+  cat > "$PROMETHEUS_FIREWALL_FILE" <<STATE
+backend=ufw
+source_ip=$prometheus_ip
+port=$scrape_port
+managed=$managed
+STATE
+  chmod 0644 "$PROMETHEUS_FIREWALL_FILE"
+}
+
+firewall_value() {
+  local key="$1"
+  awk -F= -v key="$key" '$1 == key { print substr($0, length(key) + 2) }' "$PROMETHEUS_FIREWALL_FILE" 2>/dev/null | tail -n 1
+}
+
+previous_firewall_rule_was_managed() {
+  local prometheus_ip="$1"
+  local scrape_port="$2"
+
+  [ -f "$PROMETHEUS_FIREWALL_FILE" ] || return 1
+  [ "$(firewall_value source_ip)" = "$prometheus_ip" ] || return 1
+  [ "$(firewall_value port)" = "$scrape_port" ] || return 1
+  [ "$(firewall_value managed)" = "true" ] || return 1
+}
+
+configure_ufw_for_prometheus() {
+  local prometheus_ip="$1"
+  local scrape_port output managed
+  [ -n "$prometheus_ip" ] || return 0
+
+  scrape_port="$(firewall_scrape_port)"
+
+  if ! command -v ufw >/dev/null 2>&1; then
+    warn "UFW not found; allow Prometheus manually: TCP $scrape_port from $prometheus_ip"
+    return 0
+  fi
+
+  output="$(ufw allow from "$prometheus_ip" to any port "$scrape_port" proto tcp comment 'telemon prometheus scrape' 2>&1)"
+  printf '%s\n' "$output"
+  managed="true"
+  case "$output" in
+    *'Skipping adding existing rule'*)
+      if previous_firewall_rule_was_managed "$prometheus_ip" "$scrape_port"; then
+        managed="true"
+      else
+        managed="false"
+      fi
+      ;;
+  esac
+  write_firewall_state "$prometheus_ip" "$scrape_port" "$managed"
+
+  if ufw status 2>/dev/null | grep -q '^Status: active'; then
+    ufw reload
+  else
+    warn "UFW rule added, but UFW is inactive; not enabling UFW automatically"
+  fi
+}
+
+prompt_line() {
+  local label="$1"
+  local default_value="$2"
+  local value
+  if [ -n "$default_value" ]; then
+    read -r -p "$label [$default_value]: " value
+    printf '%s\n' "${value:-$default_value}"
+  else
+    read -r -p "$label: " value
+    printf '%s\n' "$value"
+  fi
+}
+
+prompt_secret() {
+  local label="$1"
+  local default_value="$2"
+  local value
+  if [ -n "$default_value" ]; then
+    read -r -s -p "$label [keep existing]: " value
+    printf '\n' >&2
+    printf '%s\n' "${value:-$default_value}"
+  else
+    read -r -s -p "$label: " value
+    printf '\n' >&2
+    printf '%s\n' "$value"
+  fi
+}
+
+collect_inputs() {
+  local default_registry default_token default_user default_device default_advertised default_prometheus default_machine
+  default_registry="${TELEMON_REGISTRY_SERVER:-$(read_config_value registration registry_addr)}"
+  default_token="${TELEMON_ENROLLMENT_TOKEN:-$(read_config_value registration enrollment_token)}"
+  default_user="${TELEMON_USER_NAME:-$(read_config_value identity user_name)}"
+  default_user="${default_user:-$(default_user_name)}"
+  default_device="${TELEMON_DEVICE_NAME:-$(read_config_value identity device_name)}"
+  default_device="${default_device:-$(default_device_name)}"
+  default_advertised="${TELEMON_ADVERTISED_ADDR:-$(read_config_value registration advertised_addr)}"
+  default_machine="${TELEMON_MACHINE_UUID:-$(read_config_value identity machine_uuid)}"
+  default_prometheus="${TELEMON_PROMETHEUS_IP:-}"
+  if [ -z "$default_prometheus" ] && [ -f "$PROMETHEUS_IP_FILE" ]; then
+    default_prometheus="$(tr -d '[:space:]' < "$PROMETHEUS_IP_FILE")"
+  fi
+  if [ -z "$default_prometheus" ] && [ -n "$default_registry" ]; then
+    default_prometheus="$(registry_host "$default_registry")"
+  fi
+
+  REGISTRY_SERVER="$(prompt_line "REGISTRY_SERVER" "$default_registry")"
+  ENROLLMENT_TOKEN="$(prompt_secret "ENROLLMENT_TOKEN" "$default_token")"
+  USER_NAME="$(prompt_line "USER_NAME" "$default_user")"
+  DEVICE_NAME="$(prompt_line "DEVICE_NAME" "$default_device")"
+  ADVERTISED_ADDR="$(prompt_line "ADVERTISED_ADDR (blank to let registry observe)" "$default_advertised")"
+  PROMETHEUS_IP="$(prompt_line "PROMETHEUS_IP (blank to skip firewall rule)" "$default_prometheus")"
+  MACHINE_UUID="$(prompt_line "MACHINE_UUID (blank for auto-generated local machine UUID)" "$default_machine")"
+
+  [ -n "$REGISTRY_SERVER" ] || return 1
+  [ -n "$ENROLLMENT_TOKEN" ] || return 1
+  [ -n "$USER_NAME" ] || return 1
+  [ -n "$DEVICE_NAME" ] || return 1
+  return 0
+}
+
+print_preview() {
+  cat <<PREVIEW
+
+REGISTRY_SERVER=$REGISTRY_SERVER
+ENROLLMENT_TOKEN=<hidden>
+USER_NAME=$USER_NAME
+DEVICE_NAME=$DEVICE_NAME
+ADVERTISED_ADDR=$ADVERTISED_ADDR
+PROMETHEUS_IP=$PROMETHEUS_IP
+MACHINE_UUID=$MACHINE_UUID
+PREVIEW
+}
+
+confirm_inputs() {
+  local answer
+  while true; do
+    print_preview
+    read -r -p "Are these correct? (y/n): " answer
+    case "$answer" in
+      y|Y|yes|YES|Yes)
+        return 0
+        ;;
+      n|N|no|NO|No)
+        return 1
+        ;;
+      *)
+        warn "answer y or n"
+        ;;
+    esac
+  done
+}
+
+write_setup_config() {
+  update_config_value "identity" "user_name" "$USER_NAME"
+  update_config_value "identity" "device_name" "$DEVICE_NAME"
+  update_config_value "identity" "machine_uuid" "$MACHINE_UUID"
+  update_config_value "registration" "enabled" "true" "raw"
+  update_config_value "registration" "registry_addr" "$REGISTRY_SERVER"
+  update_config_value "registration" "enrollment_token" "$ENROLLMENT_TOKEN"
+  update_config_value "registration" "device_id_file" "$STATE_DIR/device-id"
+  update_config_value "registration" "advertised_addr" "$ADVERTISED_ADDR"
+}
+
+restart_service() {
+  if ! command -v systemctl >/dev/null 2>&1; then
+    warn "systemctl not found; run manually: telemon-exporter run --config $CONFIG_FILE"
+    return 0
+  fi
+
+  systemctl daemon-reload || true
+  systemctl enable "$SERVICE_NAME" || true
+  systemctl restart "$SERVICE_NAME"
+}
+
+main() {
+  require_root
+  [ -t 0 ] || die "telemon-exporter-setup requires an interactive terminal"
+  ensure_registration_config_shape
+  install -d -m 0750 -o telemon -g telemon "$STATE_DIR" 2>/dev/null || install -d -m 0750 "$STATE_DIR"
+
+  while true; do
+    if ! collect_inputs; then
+      warn "REGISTRY_SERVER, ENROLLMENT_TOKEN, USER_NAME, and DEVICE_NAME are required"
+      continue
+    fi
+    if confirm_inputs; then
+      break
+    fi
+  done
+
+  write_setup_config
+  configure_ufw_for_prometheus "$PROMETHEUS_IP"
+  restart_service
+  log "exporter setup complete; the service will enroll or heartbeat with the registry"
+}
+
+main "$@"

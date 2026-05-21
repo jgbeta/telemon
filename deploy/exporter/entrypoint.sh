@@ -18,9 +18,10 @@ ADVERTISED_ADDR="${TELEMON_ADVERTISED_ADDR:-}"
 HEARTBEAT_INTERVAL_SECONDS="${TELEMON_HEARTBEAT_INTERVAL_SECONDS:-30}"
 SCRAPE_PORT="${TELEMON_SCRAPE_PORT:-9185}"
 HWMON_ROOT="${TELEMON_HWMON_ROOT:-/host/sys/class/hwmon}"
-FAKE_ENABLED="${TELEMON_FAKE_ENABLED:-true}"
 LINUX_HWMON_ENABLED="${TELEMON_LINUX_HWMON_ENABLED:-true}"
 LINUX_HWMON_INCLUDE_UNKNOWN="${TELEMON_LINUX_HWMON_INCLUDE_UNKNOWN:-false}"
+LINUX_HWMON_NVME_ENRICHMENT_ENABLED="${TELEMON_LINUX_HWMON_NVME_ENRICHMENT_ENABLED:-true}"
+LINUX_HWMON_EXPOSE_STORAGE_MODEL="${TELEMON_LINUX_HWMON_EXPOSE_STORAGE_MODEL:-true}"
 NVIDIA_NVML_ENABLED="${TELEMON_NVIDIA_NVML_ENABLED:-true}"
 NVIDIA_EXPOSE_GPU_NAME="${TELEMON_NVIDIA_EXPOSE_GPU_NAME:-true}"
 NVIDIA_EXPOSE_GPU_UUID="${TELEMON_NVIDIA_EXPOSE_GPU_UUID:-false}"
@@ -114,7 +115,6 @@ registration:
 
 collection:
   scrape_cache_stale_after_seconds: ${TELEMON_SCRAPE_CACHE_STALE_AFTER_SECONDS:-60}
-  fake_interval_seconds: ${TELEMON_FAKE_INTERVAL_SECONDS:-5}
   temperature_interval_seconds: ${TELEMON_TEMPERATURE_INTERVAL_SECONDS:-15}
   sensor_rescan_interval_seconds: ${TELEMON_SENSOR_RESCAN_INTERVAL_SECONDS:-300}
   gpu_interval_seconds: ${TELEMON_GPU_INTERVAL_SECONDS:-15}
@@ -135,12 +135,12 @@ adaptive_sampling:
   cooldown_seconds: $ADAPTIVE_COOLDOWN_SECONDS
 
 collectors:
-  fake:
-    enabled: $(bool_value "$FAKE_ENABLED")
   linux_hwmon:
     enabled: $(bool_value "$LINUX_HWMON_ENABLED")
     root: "$(yaml_escape "$HWMON_ROOT")"
     include_unknown_sensors: $(bool_value "$LINUX_HWMON_INCLUDE_UNKNOWN")
+    nvme_enrichment_enabled: $(bool_value "$LINUX_HWMON_NVME_ENRICHMENT_ENABLED")
+    expose_storage_model: $(bool_value "$LINUX_HWMON_EXPOSE_STORAGE_MODEL")
     sensor_allowlist: $(yaml_csv_list "${TELEMON_LINUX_HWMON_ALLOWLIST:-}")
     sensor_denylist: $(yaml_csv_list "${TELEMON_LINUX_HWMON_DENYLIST:-}")
   nvidia_nvml:

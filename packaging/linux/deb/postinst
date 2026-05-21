@@ -175,6 +175,8 @@ ensure_registration_config_shape() {
 identity:
   user_name: ""
   device_name: ""
+  machine_uuid: ""
+  machine_uuid_file: ""
 CONFIG
   fi
 
@@ -192,6 +194,8 @@ registration:
 CONFIG
   fi
 
+  ensure_config_key "identity" "machine_uuid" '  machine_uuid: ""'
+  ensure_config_key "identity" "machine_uuid_file" '  machine_uuid_file: ""'
   ensure_config_key "registration" "advertised_addr" '  advertised_addr: ""'
 }
 
@@ -201,6 +205,7 @@ configure_registration_config() {
   local user_name="${TELEMON_USER_NAME:-}"
   local device_name="${TELEMON_DEVICE_NAME:-${HOSTNAME:-}}"
   local advertised_addr="${TELEMON_ADVERTISED_ADDR:-}"
+  local machine_uuid="${TELEMON_MACHINE_UUID:-}"
 
   if [ -z "$registry_server" ]; then
     return
@@ -213,6 +218,9 @@ configure_registration_config() {
 
   update_config_value "identity" "user_name" "$user_name"
   update_config_value "identity" "device_name" "$device_name"
+  if [ -n "$machine_uuid" ]; then
+    update_config_value "identity" "machine_uuid" "$machine_uuid"
+  fi
   update_config_value "registration" "enabled" "true" "raw"
   update_config_value "registration" "registry_addr" "$registry_server"
   update_config_value "registration" "enrollment_token" "$enrollment_token"
@@ -227,6 +235,21 @@ configure_registration_config() {
   fi
 }
 
+registration_is_enabled() {
+  awk '
+    /^[^[:space:]][^:]*:/ {
+      current = $1
+      sub(":", "", current)
+    }
+    current == "registration" && $1 == "enabled:" && $2 == "true" {
+      found = 1
+    }
+    END {
+      exit found ? 0 : 1
+    }
+  ' "$CONFIG_FILE" 2>/dev/null
+}
+
 if ! getent group telemon >/dev/null 2>&1; then
   groupadd --system telemon
 fi
@@ -239,6 +262,14 @@ install -d -m 0755 "$CONFIG_DIR"
 install -d -m 0750 -o telemon -g telemon "$STATE_DIR"
 ensure_registration_config_shape
 configure_registration_config
+if [ -z "${TELEMON_REGISTRY_SERVER:-}" ] && ! registration_is_enabled; then
+  cat >&2 <<'MESSAGE'
+telemon-exporter installed without registry enrollment.
+Run this command to configure enrollment interactively:
+
+  sudo telemon-exporter-setup
+MESSAGE
+fi
 configure_ufw_for_prometheus
 
 if command -v systemctl >/dev/null 2>&1; then

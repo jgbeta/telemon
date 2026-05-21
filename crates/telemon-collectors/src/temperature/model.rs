@@ -1,3 +1,5 @@
+use std::collections::BTreeMap;
+
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum Component {
     Cpu,
@@ -13,6 +15,7 @@ pub struct TemperatureReading {
     pub component: Component,
     pub sensor: String,
     pub source: &'static str,
+    pub labels: BTreeMap<String, String>,
     pub temperature_celsius: f64,
     pub critical_celsius: Option<f64>,
     pub warning_celsius: Option<f64>,

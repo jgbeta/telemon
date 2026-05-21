@@ -24,8 +24,8 @@ sudo packaging/macos/install.sh --prometheus-server-ip <monitoring-server-ip> ./
 ```
 
 Registry enrollment accepts `--registry-server`, `--enrollment-token`,
-`--user-name`, `--device-name`, and optional `--advertised-addr` when the scrape
-target differs from the registry-observed source IP.
+`--user-name`, `--device-name`, optional `--advertised-addr`, and optional
+`--machine-uuid` for dual-boot or multi-OS physical-machine grouping.
 
 Check:
 

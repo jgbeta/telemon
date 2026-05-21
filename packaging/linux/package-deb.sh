@@ -22,6 +22,7 @@ install -d -m 0755 "$ROOT/lib/systemd/system"
 mkdir -p "$DIST_DIR"
 
 install -m 0755 target/release/telemon-exporter "$ROOT/usr/bin/telemon-exporter"
+install -m 0755 packaging/linux/telemon-exporter-setup "$ROOT/usr/bin/telemon-exporter-setup"
 
 sed "s/^Architecture:.*/Architecture: ${DEB_ARCH}/; s/^Version:.*/Version: ${VERSION}/" \
   packaging/linux/deb/control > "$ROOT/DEBIAN/control"

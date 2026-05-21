@@ -6,6 +6,7 @@ use super::model::{
     percent_to_ratio, validate_memory, validate_temperature_celsius, NvidiaDeviceInfo,
     NvidiaMemory, NvidiaUtilization,
 };
+use super::nvml_ffi;
 use super::nvml_loader::{NvmlApi, NvmlCallError, NvmlLoadError};
 
 pub trait NvidiaProvider: Send + Sync {
@@ -16,6 +17,41 @@ pub trait NvidiaProvider: Send + Sync {
     fn utilization(&mut self, index: u32) -> Result<Option<NvidiaUtilization>, NvidiaError>;
     fn memory(&mut self, index: u32) -> Result<Option<NvidiaMemory>, NvidiaError>;
     fn fan_speed_ratio(&mut self, index: u32) -> Result<Option<f64>, NvidiaError>;
+
+    fn serial(&mut self, index: u32) -> Result<Option<String>, NvidiaError> {
+        let _ = index;
+        Ok(None)
+    }
+
+    fn vbios_version(&mut self, index: u32) -> Result<Option<String>, NvidiaError> {
+        let _ = index;
+        Ok(None)
+    }
+
+    fn power_usage_milliwatts(&mut self, index: u32) -> Result<Option<u32>, NvidiaError> {
+        let _ = index;
+        Ok(None)
+    }
+
+    fn power_limit_milliwatts(&mut self, index: u32) -> Result<Option<u32>, NvidiaError> {
+        let _ = index;
+        Ok(None)
+    }
+
+    fn graphics_clock_mhz(&mut self, index: u32) -> Result<Option<u32>, NvidiaError> {
+        let _ = index;
+        Ok(None)
+    }
+
+    fn memory_clock_mhz(&mut self, index: u32) -> Result<Option<u32>, NvidiaError> {
+        let _ = index;
+        Ok(None)
+    }
+
+    fn performance_state(&mut self, index: u32) -> Result<Option<u32>, NvidiaError> {
+        let _ = index;
+        Ok(None)
+    }
 }
 
 #[derive(Debug, Clone, Error, PartialEq, Eq)]
@@ -174,5 +210,45 @@ impl NvidiaProvider for DynamicNvmlProvider {
             .device_fan_speed_percent(index)
             .map_err(NvidiaError::from)?
             .and_then(percent_to_ratio))
+    }
+
+    fn serial(&mut self, index: u32) -> Result<Option<String>, NvidiaError> {
+        self.api.device_serial(index).map_err(NvidiaError::from)
+    }
+
+    fn vbios_version(&mut self, index: u32) -> Result<Option<String>, NvidiaError> {
+        self.api
+            .device_vbios_version(index)
+            .map_err(NvidiaError::from)
+    }
+
+    fn power_usage_milliwatts(&mut self, index: u32) -> Result<Option<u32>, NvidiaError> {
+        self.api
+            .device_power_usage_milliwatts(index)
+            .map_err(NvidiaError::from)
+    }
+
+    fn power_limit_milliwatts(&mut self, index: u32) -> Result<Option<u32>, NvidiaError> {
+        self.api
+            .device_power_limit_milliwatts(index)
+            .map_err(NvidiaError::from)
+    }
+
+    fn graphics_clock_mhz(&mut self, index: u32) -> Result<Option<u32>, NvidiaError> {
+        self.api
+            .device_clock_mhz(index, nvml_ffi::NVML_CLOCK_GRAPHICS)
+            .map_err(NvidiaError::from)
+    }
+
+    fn memory_clock_mhz(&mut self, index: u32) -> Result<Option<u32>, NvidiaError> {
+        self.api
+            .device_clock_mhz(index, nvml_ffi::NVML_CLOCK_MEM)
+            .map_err(NvidiaError::from)
+    }
+
+    fn performance_state(&mut self, index: u32) -> Result<Option<u32>, NvidiaError> {
+        self.api
+            .device_performance_state(index)
+            .map_err(NvidiaError::from)
     }
 }

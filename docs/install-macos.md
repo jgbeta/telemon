@@ -36,13 +36,15 @@ sudo packaging/macos/install.sh \
   --user-name example-user \
   --device-name macbook \
   --advertised-addr exporter.example.local \
+  --machine-uuid <shared-machine-uuid-if-dual-boot> \
   ./target/release/telemon-exporter
 ```
 
 If `--prometheus-server-ip` is omitted, the installer derives the scrape source
 IP from `--registry-server` and adds the same source-restricted `pf` rule.
 Omit `--advertised-addr` to let the registry use the connection source IP as the
-Prometheus scrape target.
+Prometheus scrape target. Use `--machine-uuid` when dual-boot or multi-OS
+installs should share one physical-machine identity.
 
 Installed paths:
 

@@ -1,4 +1,7 @@
+use std::collections::BTreeMap;
 use std::time::Instant;
+
+use serde::Serialize;
 
 use crate::traits::{collector_status_metrics, unix_timestamp_seconds, Collector, CollectorResult};
 use telemon_core::config::NvidiaNvmlConfig;
@@ -26,6 +29,241 @@ pub struct NvidiaNvmlDiscovery {
     pub device_count: u32,
     pub status: &'static str,
     pub message: Option<String>,
+}
+
+#[derive(Debug, Clone, Serialize)]
+pub struct NvidiaNvmlInspection {
+    pub enabled: bool,
+    pub supported: bool,
+    pub library_loaded: bool,
+    pub device_count: u32,
+    pub status: String,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub message: Option<String>,
+    pub devices: Vec<NvidiaNvmlDeviceInspection>,
+}
+
+#[derive(Debug, Clone, Serialize)]
+pub struct NvidiaNvmlDeviceInspection {
+    pub index: u32,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub name: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub uuid: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub temperature_celsius: Option<f64>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub utilization: Option<NvidiaUtilizationInspection>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub memory: Option<NvidiaMemoryInspection>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub fan_speed_ratio: Option<f64>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub serial: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub vbios_version: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub power_usage_milliwatts: Option<u32>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub power_limit_milliwatts: Option<u32>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub graphics_clock_mhz: Option<u32>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub memory_clock_mhz: Option<u32>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub performance_state: Option<String>,
+    #[serde(skip_serializing_if = "BTreeMap::is_empty")]
+    pub field_errors: BTreeMap<String, String>,
+}
+
+#[derive(Debug, Clone, Copy, Serialize)]
+pub struct NvidiaUtilizationInspection {
+    pub graphics_ratio: f64,
+    pub memory_ratio: f64,
+}
+
+#[derive(Debug, Clone, Copy, Serialize)]
+pub struct NvidiaMemoryInspection {
+    pub total_bytes: u64,
+    pub used_bytes: u64,
+    pub free_bytes: u64,
+}
+
+pub fn inspect_hardware(config: &NvidiaNvmlConfig) -> NvidiaNvmlInspection {
+    if !config.enabled {
+        return NvidiaNvmlInspection {
+            enabled: false,
+            supported: false,
+            library_loaded: false,
+            device_count: 0,
+            status: "disabled".to_string(),
+            message: None,
+            devices: Vec::new(),
+        };
+    }
+
+    let mut provider = match DynamicNvmlProvider::load(&config.library_paths) {
+        Ok(provider) => provider,
+        Err(error) => {
+            return NvidiaNvmlInspection {
+                enabled: true,
+                supported: false,
+                library_loaded: error.library_loaded(),
+                device_count: 0,
+                status: error.status().to_string(),
+                message: Some(error.to_string()),
+                devices: Vec::new(),
+            };
+        }
+    };
+
+    inspect_provider(config, &mut provider, true)
+}
+
+fn inspect_provider(
+    config: &NvidiaNvmlConfig,
+    provider: &mut dyn NvidiaProvider,
+    library_loaded: bool,
+) -> NvidiaNvmlInspection {
+    if !provider.is_supported() {
+        return NvidiaNvmlInspection {
+            enabled: config.enabled,
+            supported: false,
+            library_loaded,
+            device_count: 0,
+            status: "unsupported".to_string(),
+            message: None,
+            devices: Vec::new(),
+        };
+    }
+
+    let device_count = match provider.device_count() {
+        Ok(device_count) => device_count,
+        Err(error) => {
+            return NvidiaNvmlInspection {
+                enabled: config.enabled,
+                supported: true,
+                library_loaded,
+                device_count: 0,
+                status: error.status().to_string(),
+                message: Some(error.to_string()),
+                devices: Vec::new(),
+            };
+        }
+    };
+
+    let mut devices = Vec::new();
+    for index in 0..device_count {
+        devices.push(inspect_device(provider, index));
+    }
+
+    NvidiaNvmlInspection {
+        enabled: config.enabled,
+        supported: true,
+        library_loaded,
+        device_count,
+        status: if device_count == 0 {
+            "no_devices".to_string()
+        } else {
+            "available".to_string()
+        },
+        message: None,
+        devices,
+    }
+}
+
+fn inspect_device(provider: &mut dyn NvidiaProvider, index: u32) -> NvidiaNvmlDeviceInspection {
+    let mut field_errors = BTreeMap::new();
+    let info = match provider.device_info(index) {
+        Ok(info) => Some(info),
+        Err(error) => {
+            field_errors.insert("device_info".to_string(), error.to_string());
+            None
+        }
+    };
+
+    let utilization = inspect_optional(
+        &mut field_errors,
+        "utilization",
+        provider.utilization(index),
+    )
+    .map(|utilization| NvidiaUtilizationInspection {
+        graphics_ratio: utilization.graphics_ratio,
+        memory_ratio: utilization.memory_ratio,
+    });
+    let memory =
+        inspect_optional(&mut field_errors, "memory", provider.memory(index)).map(|memory| {
+            NvidiaMemoryInspection {
+                total_bytes: memory.total_bytes,
+                used_bytes: memory.used_bytes,
+                free_bytes: memory.free_bytes,
+            }
+        });
+
+    NvidiaNvmlDeviceInspection {
+        index,
+        name: info.as_ref().and_then(|info| info.name.clone()),
+        uuid: info.as_ref().and_then(|info| info.uuid.clone()),
+        temperature_celsius: inspect_optional(
+            &mut field_errors,
+            "temperature_celsius",
+            provider.temperature_celsius(index),
+        ),
+        utilization,
+        memory,
+        fan_speed_ratio: inspect_optional(
+            &mut field_errors,
+            "fan_speed_ratio",
+            provider.fan_speed_ratio(index),
+        ),
+        serial: inspect_optional(&mut field_errors, "serial", provider.serial(index)),
+        vbios_version: inspect_optional(
+            &mut field_errors,
+            "vbios_version",
+            provider.vbios_version(index),
+        ),
+        power_usage_milliwatts: inspect_optional(
+            &mut field_errors,
+            "power_usage_milliwatts",
+            provider.power_usage_milliwatts(index),
+        ),
+        power_limit_milliwatts: inspect_optional(
+            &mut field_errors,
+            "power_limit_milliwatts",
+            provider.power_limit_milliwatts(index),
+        ),
+        graphics_clock_mhz: inspect_optional(
+            &mut field_errors,
+            "graphics_clock_mhz",
+            provider.graphics_clock_mhz(index),
+        ),
+        memory_clock_mhz: inspect_optional(
+            &mut field_errors,
+            "memory_clock_mhz",
+            provider.memory_clock_mhz(index),
+        ),
+        performance_state: inspect_optional(
+            &mut field_errors,
+            "performance_state",
+            provider.performance_state(index),
+        )
+        .map(|state| format!("P{state}")),
+        field_errors,
+    }
+}
+
+fn inspect_optional<T>(
+    field_errors: &mut BTreeMap<String, String>,
+    field_name: &'static str,
+    result: Result<Option<T>, NvidiaError>,
+) -> Option<T> {
+    match result {
+        Ok(value) => value,
+        Err(error) => {
+            field_errors.insert(field_name.to_string(), error.to_string());
+            None
+        }
+    }
 }
 
 impl NvidiaNvmlCollector {
@@ -239,6 +477,36 @@ fn collect_gpu_metrics(
         Err(error) => record_partial_error(partial_errors, index, "memory", error),
     }
 
+    match provider.power_usage_milliwatts(index) {
+        Ok(Some(milliwatts)) => metrics.push(gpu_power_usage_metric(index, milliwatts)),
+        Ok(None) => {}
+        Err(error) => record_partial_error(partial_errors, index, "power_usage", error),
+    }
+
+    match provider.power_limit_milliwatts(index) {
+        Ok(Some(milliwatts)) => metrics.push(gpu_power_limit_metric(index, milliwatts)),
+        Ok(None) => {}
+        Err(error) => record_partial_error(partial_errors, index, "power_limit", error),
+    }
+
+    match provider.graphics_clock_mhz(index) {
+        Ok(Some(mhz)) => metrics.push(gpu_clock_metric(index, "graphics", mhz)),
+        Ok(None) => {}
+        Err(error) => record_partial_error(partial_errors, index, "graphics_clock", error),
+    }
+
+    match provider.memory_clock_mhz(index) {
+        Ok(Some(mhz)) => metrics.push(gpu_clock_metric(index, "memory", mhz)),
+        Ok(None) => {}
+        Err(error) => record_partial_error(partial_errors, index, "memory_clock", error),
+    }
+
+    match provider.performance_state(index) {
+        Ok(Some(state)) => metrics.push(gpu_performance_state_metric(index, state)),
+        Ok(None) => {}
+        Err(error) => record_partial_error(partial_errors, index, "performance_state", error),
+    }
+
     if config.fan_speed_enabled {
         match provider.fan_speed_ratio(index) {
             Ok(Some(fan_speed)) => metrics.push(gpu_fan_speed_metric(index, fan_speed)),
@@ -353,6 +621,50 @@ fn gpu_memory_metrics(index: u32, memory: NvidiaMemory) -> Vec<MetricSample> {
     ]
 }
 
+fn gpu_power_usage_metric(index: u32, milliwatts: u32) -> MetricSample {
+    let gpu_index = index.to_string();
+    MetricSample::gauge(
+        names::GPU_POWER_USAGE_WATTS,
+        "NVIDIA GPU power usage in watts.",
+        labels(&[("gpu_index", gpu_index.as_str()), ("source", SOURCE)]),
+        milliwatts as f64 / 1_000.0,
+    )
+}
+
+fn gpu_power_limit_metric(index: u32, milliwatts: u32) -> MetricSample {
+    let gpu_index = index.to_string();
+    MetricSample::gauge(
+        names::GPU_POWER_LIMIT_WATTS,
+        "NVIDIA GPU enforced power limit in watts.",
+        labels(&[("gpu_index", gpu_index.as_str()), ("source", SOURCE)]),
+        milliwatts as f64 / 1_000.0,
+    )
+}
+
+fn gpu_clock_metric(index: u32, clock: &str, mhz: u32) -> MetricSample {
+    let gpu_index = index.to_string();
+    MetricSample::gauge(
+        names::GPU_CLOCK_HERTZ,
+        "NVIDIA GPU clock speed in hertz.",
+        labels(&[
+            ("gpu_index", gpu_index.as_str()),
+            ("source", SOURCE),
+            ("clock", clock),
+        ]),
+        mhz as f64 * 1_000_000.0,
+    )
+}
+
+fn gpu_performance_state_metric(index: u32, state: u32) -> MetricSample {
+    let gpu_index = index.to_string();
+    MetricSample::gauge(
+        names::GPU_PERFORMANCE_STATE,
+        "NVIDIA GPU performance state number where P0 is 0.",
+        labels(&[("gpu_index", gpu_index.as_str()), ("source", SOURCE)]),
+        state as f64,
+    )
+}
+
 fn gpu_fan_speed_metric(index: u32, fan_speed: f64) -> MetricSample {
     let gpu_index = index.to_string();
     MetricSample::gauge(
@@ -369,20 +681,30 @@ fn gpu_fan_speed_metric(index: u32, fan_speed: f64) -> MetricSample {
 
 #[cfg(test)]
 mod tests {
-    use super::super::fake_provider::FakeNvidiaProvider;
+    use super::super::test_provider::{TestNvidiaDevice, TestNvidiaProvider};
     use super::*;
 
     fn metric_value(result: &CollectorResult, name: &str, label: (&str, &str)) -> Option<f64> {
+        metric_value_with_labels(result, name, &[label])
+    }
+
+    fn metric_value_with_labels(
+        result: &CollectorResult,
+        name: &str,
+        expected_labels: &[(&str, &str)],
+    ) -> Option<f64> {
         result
             .metrics
             .iter()
             .find(|metric| {
                 metric.name == name
-                    && metric
-                        .labels
-                        .get(label.0)
-                        .map(|value| value == label.1)
-                        .unwrap_or(false)
+                    && expected_labels.iter().all(|(key, value)| {
+                        metric
+                            .labels
+                            .get(*key)
+                            .map(|actual| actual == value)
+                            .unwrap_or(false)
+                    })
             })
             .map(|metric| metric.value)
     }
@@ -421,7 +743,7 @@ mod tests {
     fn no_devices_is_supported_and_up_without_gpu_metrics() {
         let mut collector = NvidiaNvmlCollector::with_provider(
             NvidiaNvmlConfig::default(),
-            FakeNvidiaProvider::new(Vec::new()),
+            TestNvidiaProvider::new(Vec::new()),
         );
 
         let result = collector.collect();
@@ -446,7 +768,7 @@ mod tests {
     fn one_gpu_emits_expected_metrics_without_uuid_by_default() {
         let mut collector = NvidiaNvmlCollector::with_provider(
             NvidiaNvmlConfig::default(),
-            FakeNvidiaProvider::one_gpu(),
+            TestNvidiaProvider::one_gpu(),
         );
 
         let result = collector.collect();
@@ -473,6 +795,34 @@ mod tests {
             metric_value(&result, names::FAN_SPEED_RATIO, ("gpu_index", "0")),
             Some(0.42)
         );
+        assert_eq!(
+            metric_value(&result, names::GPU_POWER_USAGE_WATTS, ("gpu_index", "0")),
+            Some(57.622)
+        );
+        assert_eq!(
+            metric_value(&result, names::GPU_POWER_LIMIT_WATTS, ("gpu_index", "0")),
+            Some(450.0)
+        );
+        assert_eq!(
+            metric_value_with_labels(
+                &result,
+                names::GPU_CLOCK_HERTZ,
+                &[("gpu_index", "0"), ("clock", "graphics")]
+            ),
+            Some(2_520_000_000.0)
+        );
+        assert_eq!(
+            metric_value_with_labels(
+                &result,
+                names::GPU_CLOCK_HERTZ,
+                &[("gpu_index", "0"), ("clock", "memory")]
+            ),
+            Some(10_501_000_000.0)
+        );
+        assert_eq!(
+            metric_value(&result, names::GPU_PERFORMANCE_STATE, ("gpu_index", "0")),
+            Some(0.0)
+        );
 
         let info = result
             .metrics
@@ -493,7 +843,7 @@ mod tests {
             ..NvidiaNvmlConfig::default()
         };
         let mut collector =
-            NvidiaNvmlCollector::with_provider(config, FakeNvidiaProvider::one_gpu());
+            NvidiaNvmlCollector::with_provider(config, TestNvidiaProvider::one_gpu());
 
         let result = collector.collect();
         let info = result
@@ -515,10 +865,62 @@ mod tests {
             ..NvidiaNvmlConfig::default()
         };
         let mut collector =
-            NvidiaNvmlCollector::with_provider(config, FakeNvidiaProvider::one_gpu());
+            NvidiaNvmlCollector::with_provider(config, TestNvidiaProvider::one_gpu());
 
         let result = collector.collect();
 
         assert!(!has_metric(&result, names::FAN_SPEED_RATIO));
+    }
+
+    #[test]
+    fn unsupported_optional_gpu_fields_are_skipped() {
+        let provider = TestNvidiaProvider::new(vec![TestNvidiaDevice {
+            info: NvidiaDeviceInfo {
+                index: 0,
+                name: Some("Minimal NVIDIA GPU".to_string()),
+                uuid: None,
+            },
+            temperature_celsius: Some(50.0),
+            utilization: None,
+            memory: None,
+            fan_speed_ratio: None,
+            power_usage_milliwatts: None,
+            power_limit_milliwatts: None,
+            graphics_clock_mhz: None,
+            memory_clock_mhz: None,
+            performance_state: None,
+        }]);
+        let mut collector =
+            NvidiaNvmlCollector::with_provider(NvidiaNvmlConfig::default(), provider);
+
+        let result = collector.collect();
+
+        assert!(result.success);
+        assert!(has_metric(&result, names::GPU_INFO));
+        assert_eq!(
+            metric_value(&result, names::TEMPERATURE_CELSIUS, ("gpu_index", "0")),
+            Some(50.0)
+        );
+        assert!(!has_metric(&result, names::GPU_POWER_USAGE_WATTS));
+        assert!(!has_metric(&result, names::GPU_POWER_LIMIT_WATTS));
+        assert!(!has_metric(&result, names::GPU_CLOCK_HERTZ));
+        assert!(!has_metric(&result, names::GPU_PERFORMANCE_STATE));
+    }
+
+    #[test]
+    fn inspect_provider_reports_available_test_gpu() {
+        let config = NvidiaNvmlConfig::default();
+        let mut provider = TestNvidiaProvider::one_gpu();
+
+        let inspection = inspect_provider(&config, &mut provider, true);
+
+        assert!(inspection.supported);
+        assert_eq!(inspection.status, "available");
+        assert_eq!(inspection.device_count, 1);
+        assert_eq!(
+            inspection.devices[0].name.as_deref(),
+            Some("Test NVIDIA GPU")
+        );
+        assert_eq!(inspection.devices[0].temperature_celsius, Some(58.0));
     }
 }

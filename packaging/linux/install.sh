@@ -14,6 +14,7 @@ ENROLLMENT_TOKEN=""
 USER_NAME=""
 DEVICE_NAME="${HOSTNAME:-}"
 ADVERTISED_ADDR="${TELEMON_ADVERTISED_ADDR:-}"
+MACHINE_UUID="${TELEMON_MACHINE_UUID:-}"
 SOURCE_BINARY="target/release/telemon-exporter"
 
 usage() {
@@ -26,6 +27,7 @@ Options:
   --user-name NAME                 Human user label for this device.
   --device-name NAME               Human device label; defaults to hostname.
   --advertised-addr HOST_OR_IP     Scrape host/IP published to Prometheus SD.
+  --machine-uuid UUID              Physical machine UUID shared by multi-OS installs.
   --prometheus-server-ip IP        Source allowed to scrape the exporter TCP port.
 
 Installs telemon-exporter as a systemd service. When --prometheus-server-ip
@@ -83,6 +85,14 @@ while [ "$#" -gt 0 ]; do
         exit 1
       fi
       ADVERTISED_ADDR="$2"
+      shift 2
+      ;;
+    --machine-uuid)
+      if [ "$#" -lt 2 ]; then
+        echo "--machine-uuid requires a UUID" >&2
+        exit 1
+      fi
+      MACHINE_UUID="$2"
       shift 2
       ;;
     --help|-h)
@@ -229,6 +239,9 @@ prompt_registration_config() {
   if [ -z "$ADVERTISED_ADDR" ] && [ -t 0 ]; then
     read -r -p "Advertised scrape host/IP (blank to let registry observe): " ADVERTISED_ADDR
   fi
+  if [ -z "$MACHINE_UUID" ] && [ -t 0 ]; then
+    read -r -p "Machine UUID (blank for auto-generated local machine UUID): " MACHINE_UUID
+  fi
 
   if [ -z "$ENROLLMENT_TOKEN" ] || [ -z "$USER_NAME" ]; then
     echo "registration disabled; registry server requires enrollment token and user name" >&2
@@ -317,6 +330,8 @@ ensure_registration_config_shape() {
 identity:
   user_name: ""
   device_name: ""
+  machine_uuid: ""
+  machine_uuid_file: ""
 CONFIG
   fi
 
@@ -334,6 +349,8 @@ registration:
 CONFIG
   fi
 
+  ensure_config_key "identity" "machine_uuid" '  machine_uuid: ""'
+  ensure_config_key "identity" "machine_uuid_file" '  machine_uuid_file: ""'
   ensure_config_key "registration" "advertised_addr" '  advertised_addr: ""'
 }
 
@@ -344,6 +361,9 @@ configure_registration_config() {
 
   update_config_value "identity" "user_name" "$USER_NAME"
   update_config_value "identity" "device_name" "$DEVICE_NAME"
+  if [ -n "$MACHINE_UUID" ]; then
+    update_config_value "identity" "machine_uuid" "$MACHINE_UUID"
+  fi
   update_config_value "registration" "enabled" "true" "raw"
   update_config_value "registration" "registry_addr" "$REGISTRY_SERVER"
   update_config_value "registration" "enrollment_token" "$ENROLLMENT_TOKEN"
@@ -383,7 +403,6 @@ server:
 
 collection:
   scrape_cache_stale_after_seconds: 60
-  fake_interval_seconds: 5
   temperature_interval_seconds: 15
   sensor_rescan_interval_seconds: 300
   gpu_interval_seconds: 15
@@ -391,6 +410,8 @@ collection:
 identity:
   user_name: ""
   device_name: ""
+  machine_uuid: ""
+  machine_uuid_file: ""
 
 registration:
   enabled: false
@@ -402,12 +423,12 @@ registration:
   advertised_addr: ""
 
 collectors:
-  fake:
-    enabled: true
   linux_hwmon:
     enabled: true
     root: "/sys/class/hwmon"
     include_unknown_sensors: false
+    nvme_enrichment_enabled: true
+    expose_storage_model: true
     sensor_allowlist: []
     sensor_denylist: []
   nvidia_nvml:

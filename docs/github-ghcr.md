@@ -3,7 +3,7 @@
 Telemon publishes two public Docker images:
 
 ```text
-ghcr.io/<owner>/telemon-registry
+ghcr.io/<owner>/telemon-hub
 ghcr.io/<owner>/telemon-exporter
 ```
 
@@ -46,7 +46,7 @@ git push origin v0.1.0
 5. Pull the images from a target host:
 
 ```bash
-docker pull ghcr.io/<owner>/telemon-registry:edge
+docker pull ghcr.io/<owner>/telemon-hub:edge
 docker pull ghcr.io/<owner>/telemon-exporter:edge
 ```
 
@@ -56,7 +56,7 @@ Set image variables in a `.env` file near the compose file or export them in the
 shell:
 
 ```bash
-export TELEMON_REGISTRY_IMAGE=ghcr.io/<owner>/telemon-registry:edge
+export TELEMON_HUB_IMAGE=ghcr.io/<owner>/telemon-hub:edge
 export TELEMON_EXPORTER_IMAGE=ghcr.io/<owner>/telemon-exporter:edge
 ```
 

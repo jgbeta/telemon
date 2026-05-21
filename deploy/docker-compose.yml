@@ -1,7 +1,7 @@
 services:
-  registry:
-    image: ${TELEMON_REGISTRY_IMAGE:-ghcr.io/your-github-owner/telemon-registry:edge}
-    container_name: telemon-registry
+  hub:
+    image: ${TELEMON_HUB_IMAGE:-ghcr.io/jgbeta/telemon-hub:edge}
+    container_name: telemon-hub
     restart: unless-stopped
     ports:
       - "9186:9186"
@@ -30,7 +30,7 @@ services:
     extra_hosts:
       - "host.docker.internal:host-gateway"
     depends_on:
-      - registry
+      - hub
 
   grafana:
     image: grafana/grafana-oss

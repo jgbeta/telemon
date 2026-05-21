@@ -232,6 +232,9 @@ fn is_static_metric(metric: &MetricSample) -> bool {
         telemon_core::metrics::names::COLLECTOR_SUPPORTED
             | telemon_core::metrics::names::GPU_INFO
             | telemon_core::metrics::names::GPU_MEMORY_TOTAL_BYTES
+            | telemon_core::metrics::names::GPU_POWER_LIMIT_WATTS
+            | telemon_core::metrics::names::STORAGE_DEVICE_INFO
+            | telemon_core::metrics::names::STORAGE_NAMESPACE_CAPACITY_BYTES
             | telemon_core::metrics::names::TEMPERATURE_LIMIT_CELSIUS
     )
 }
@@ -291,5 +294,43 @@ mod tests {
         assert!(snapshot
             .iter()
             .any(|sample| sample.name == telemon_core::metrics::names::COLLECTOR_UP));
+    }
+
+    #[test]
+    fn storage_identity_and_capacity_are_static() {
+        let storage_info = MetricSample::gauge(
+            telemon_core::metrics::names::STORAGE_DEVICE_INFO,
+            "storage info",
+            telemon_core::metrics::model::labels(&[]),
+            1.0,
+        );
+        let namespace_capacity = MetricSample::gauge(
+            telemon_core::metrics::names::STORAGE_NAMESPACE_CAPACITY_BYTES,
+            "storage capacity",
+            telemon_core::metrics::model::labels(&[]),
+            512.0,
+        );
+
+        assert!(is_static_metric(&storage_info));
+        assert!(is_static_metric(&namespace_capacity));
+    }
+
+    #[test]
+    fn gpu_power_limit_is_static_but_usage_is_dynamic() {
+        let power_limit = MetricSample::gauge(
+            telemon_core::metrics::names::GPU_POWER_LIMIT_WATTS,
+            "power limit",
+            telemon_core::metrics::model::labels(&[]),
+            450.0,
+        );
+        let power_usage = MetricSample::gauge(
+            telemon_core::metrics::names::GPU_POWER_USAGE_WATTS,
+            "power usage",
+            telemon_core::metrics::model::labels(&[]),
+            57.0,
+        );
+
+        assert!(is_static_metric(&power_limit));
+        assert!(!is_static_metric(&power_usage));
     }
 }

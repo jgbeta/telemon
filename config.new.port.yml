@@ -1,6 +1,6 @@
 server:
   #listen: "127.0.0.1:9185"
-  listen: "0.0.0.0:9185"
+  listen: "0.0.0.0:9190"
   metrics_path: "/metrics"
   static_metrics_path: "/metrics/static"
 
@@ -16,7 +16,7 @@ registration:
   enrollment_token: ""
   device_id_file: ""
   heartbeat_interval_seconds: 30
-  scrape_port: 9185
+  scrape_port: 9190
   advertised_addr: ""
 
 collection:

@@ -7,6 +7,8 @@ pub const NVML_SUCCESS: NvmlReturn = 0;
 pub const NVML_ERROR_NOT_SUPPORTED: NvmlReturn = 3;
 pub const NVML_ERROR_NOT_FOUND: NvmlReturn = 6;
 pub const NVML_TEMPERATURE_GPU: c_uint = 0;
+pub const NVML_CLOCK_GRAPHICS: c_uint = 0;
+pub const NVML_CLOCK_MEM: c_uint = 2;
 
 #[repr(C)]
 #[derive(Debug, Clone, Copy, Default)]
@@ -35,4 +37,14 @@ pub type NvmlDeviceGetUtilizationRates =
     unsafe extern "C" fn(NvmlDevice, *mut NvmlUtilization) -> NvmlReturn;
 pub type NvmlDeviceGetMemoryInfo = unsafe extern "C" fn(NvmlDevice, *mut NvmlMemory) -> NvmlReturn;
 pub type NvmlDeviceGetFanSpeed = unsafe extern "C" fn(NvmlDevice, *mut c_uint) -> NvmlReturn;
+pub type NvmlDeviceGetSerial = unsafe extern "C" fn(NvmlDevice, *mut c_char, c_uint) -> NvmlReturn;
+pub type NvmlDeviceGetVbiosVersion =
+    unsafe extern "C" fn(NvmlDevice, *mut c_char, c_uint) -> NvmlReturn;
+pub type NvmlDeviceGetPowerUsage = unsafe extern "C" fn(NvmlDevice, *mut c_uint) -> NvmlReturn;
+pub type NvmlDeviceGetEnforcedPowerLimit =
+    unsafe extern "C" fn(NvmlDevice, *mut c_uint) -> NvmlReturn;
+pub type NvmlDeviceGetClockInfo =
+    unsafe extern "C" fn(NvmlDevice, c_uint, *mut c_uint) -> NvmlReturn;
+pub type NvmlDeviceGetPerformanceState =
+    unsafe extern "C" fn(NvmlDevice, *mut c_uint) -> NvmlReturn;
 pub type NvmlErrorString = unsafe extern "C" fn(NvmlReturn) -> *const c_char;

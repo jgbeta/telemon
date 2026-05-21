@@ -6,6 +6,7 @@ edition.workspace = true
 [dependencies]
 anyhow.workspace = true
 libloading.workspace = true
+serde.workspace = true
 telemon-core.workspace = true
 thiserror.workspace = true
 tracing.workspace = true

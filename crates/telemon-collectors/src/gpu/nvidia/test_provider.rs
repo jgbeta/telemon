@@ -2,23 +2,28 @@ use super::model::{NvidiaDeviceInfo, NvidiaMemory, NvidiaUtilization};
 use super::provider::{NvidiaError, NvidiaProvider};
 
 #[derive(Debug, Clone)]
-pub struct FakeNvidiaDevice {
+pub struct TestNvidiaDevice {
     pub info: NvidiaDeviceInfo,
     pub temperature_celsius: Option<f64>,
     pub utilization: Option<NvidiaUtilization>,
     pub memory: Option<NvidiaMemory>,
     pub fan_speed_ratio: Option<f64>,
+    pub power_usage_milliwatts: Option<u32>,
+    pub power_limit_milliwatts: Option<u32>,
+    pub graphics_clock_mhz: Option<u32>,
+    pub memory_clock_mhz: Option<u32>,
+    pub performance_state: Option<u32>,
 }
 
 #[derive(Debug, Clone)]
-pub struct FakeNvidiaProvider {
+pub struct TestNvidiaProvider {
     supported: bool,
-    devices: Vec<FakeNvidiaDevice>,
+    devices: Vec<TestNvidiaDevice>,
     device_count_error: Option<NvidiaError>,
 }
 
-impl FakeNvidiaProvider {
-    pub fn new(devices: Vec<FakeNvidiaDevice>) -> Self {
+impl TestNvidiaProvider {
+    pub fn new(devices: Vec<TestNvidiaDevice>) -> Self {
         Self {
             supported: true,
             devices,
@@ -26,24 +31,8 @@ impl FakeNvidiaProvider {
         }
     }
 
-    pub fn unsupported() -> Self {
-        Self {
-            supported: false,
-            devices: Vec::new(),
-            device_count_error: None,
-        }
-    }
-
-    pub fn with_device_count_error(error: NvidiaError) -> Self {
-        Self {
-            supported: true,
-            devices: Vec::new(),
-            device_count_error: Some(error),
-        }
-    }
-
     pub fn one_gpu() -> Self {
-        Self::new(vec![FakeNvidiaDevice {
+        Self::new(vec![TestNvidiaDevice {
             info: NvidiaDeviceInfo {
                 index: 0,
                 name: Some("Test NVIDIA GPU".to_string()),
@@ -60,17 +49,22 @@ impl FakeNvidiaProvider {
                 free_bytes: 14 * 1024 * 1024 * 1024,
             }),
             fan_speed_ratio: Some(0.42),
+            power_usage_milliwatts: Some(57_622),
+            power_limit_milliwatts: Some(450_000),
+            graphics_clock_mhz: Some(2_520),
+            memory_clock_mhz: Some(10_501),
+            performance_state: Some(0),
         }])
     }
 
-    fn device(&self, index: u32) -> Result<&FakeNvidiaDevice, NvidiaError> {
+    fn device(&self, index: u32) -> Result<&TestNvidiaDevice, NvidiaError> {
         self.devices
             .get(index as usize)
             .ok_or(NvidiaError::DeviceIndexOutOfRange { index })
     }
 }
 
-impl NvidiaProvider for FakeNvidiaProvider {
+impl NvidiaProvider for TestNvidiaProvider {
     fn is_supported(&self) -> bool {
         self.supported
     }
@@ -101,6 +95,26 @@ impl NvidiaProvider for FakeNvidiaProvider {
     fn fan_speed_ratio(&mut self, index: u32) -> Result<Option<f64>, NvidiaError> {
         Ok(self.device(index)?.fan_speed_ratio)
     }
+
+    fn power_usage_milliwatts(&mut self, index: u32) -> Result<Option<u32>, NvidiaError> {
+        Ok(self.device(index)?.power_usage_milliwatts)
+    }
+
+    fn power_limit_milliwatts(&mut self, index: u32) -> Result<Option<u32>, NvidiaError> {
+        Ok(self.device(index)?.power_limit_milliwatts)
+    }
+
+    fn graphics_clock_mhz(&mut self, index: u32) -> Result<Option<u32>, NvidiaError> {
+        Ok(self.device(index)?.graphics_clock_mhz)
+    }
+
+    fn memory_clock_mhz(&mut self, index: u32) -> Result<Option<u32>, NvidiaError> {
+        Ok(self.device(index)?.memory_clock_mhz)
+    }
+
+    fn performance_state(&mut self, index: u32) -> Result<Option<u32>, NvidiaError> {
+        Ok(self.device(index)?.performance_state)
+    }
 }
 
 #[cfg(test)]
@@ -108,8 +122,8 @@ mod tests {
     use super::*;
 
     #[test]
-    fn fake_provider_returns_one_gpu() {
-        let mut provider = FakeNvidiaProvider::one_gpu();
+    fn test_provider_returns_one_gpu() {
+        let mut provider = TestNvidiaProvider::one_gpu();
 
         assert!(provider.is_supported());
         assert_eq!(provider.device_count().unwrap(), 1);
@@ -125,5 +139,10 @@ mod tests {
                 memory_ratio: 0.12,
             })
         );
+        assert_eq!(provider.power_usage_milliwatts(0).unwrap(), Some(57_622));
+        assert_eq!(provider.power_limit_milliwatts(0).unwrap(), Some(450_000));
+        assert_eq!(provider.graphics_clock_mhz(0).unwrap(), Some(2_520));
+        assert_eq!(provider.memory_clock_mhz(0).unwrap(), Some(10_501));
+        assert_eq!(provider.performance_state(0).unwrap(), Some(0));
     }
 }

@@ -23,7 +23,7 @@ jobs:
         image:
           - name: telemon-exporter
             dockerfile: deploy/exporter/Dockerfile
-          - name: telemon-registry
+          - name: telemon-hub
             dockerfile: deploy/registry/Dockerfile
 
     steps:

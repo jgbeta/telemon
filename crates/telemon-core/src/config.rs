@@ -66,7 +66,6 @@ pub struct RegistryConfig {
 #[serde(default)]
 pub struct CollectionConfig {
     pub scrape_cache_stale_after_seconds: u64,
-    pub fake_interval_seconds: u64,
     pub temperature_interval_seconds: u64,
     pub sensor_rescan_interval_seconds: u64,
     pub gpu_interval_seconds: u64,
@@ -103,15 +102,8 @@ pub struct AdaptiveTemperatureConfig {
 #[derive(Debug, Clone, Default, Serialize, Deserialize)]
 #[serde(default)]
 pub struct CollectorsConfig {
-    pub fake: FakeCollectorConfig,
     pub linux_hwmon: LinuxHwmonConfig,
     pub nvidia_nvml: NvidiaNvmlConfig,
-}
-
-#[derive(Debug, Clone, Serialize, Deserialize)]
-#[serde(default)]
-pub struct FakeCollectorConfig {
-    pub enabled: bool,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -120,6 +112,8 @@ pub struct LinuxHwmonConfig {
     pub enabled: bool,
     pub root: PathBuf,
     pub include_unknown_sensors: bool,
+    pub nvme_enrichment_enabled: bool,
+    pub expose_storage_model: bool,
     pub sensor_allowlist: Vec<String>,
     pub sensor_denylist: Vec<String>,
 }
@@ -186,10 +180,6 @@ impl AppConfig {
         validate_positive(
             self.collection.scrape_cache_stale_after_seconds,
             "collection.scrape_cache_stale_after_seconds",
-        )?;
-        validate_positive(
-            self.collection.fake_interval_seconds,
-            "collection.fake_interval_seconds",
         )?;
         validate_positive(
             self.collection.temperature_interval_seconds,
@@ -362,7 +352,6 @@ impl Default for CollectionConfig {
     fn default() -> Self {
         Self {
             scrape_cache_stale_after_seconds: 60,
-            fake_interval_seconds: 5,
             temperature_interval_seconds: 15,
             sensor_rescan_interval_seconds: 300,
             gpu_interval_seconds: 15,
@@ -404,18 +393,14 @@ impl Default for AdaptiveTemperatureConfig {
     }
 }
 
-impl Default for FakeCollectorConfig {
-    fn default() -> Self {
-        Self { enabled: true }
-    }
-}
-
 impl Default for LinuxHwmonConfig {
     fn default() -> Self {
         Self {
             enabled: true,
             root: PathBuf::from("/sys/class/hwmon"),
             include_unknown_sensors: false,
+            nvme_enrichment_enabled: true,
+            expose_storage_model: true,
             sensor_allowlist: Vec::new(),
             sensor_denylist: Vec::new(),
         }
@@ -477,9 +462,18 @@ mod tests {
     #[test]
     fn rejects_zero_intervals() {
         let mut config = AppConfig::default();
-        config.collection.fake_interval_seconds = 0;
+        config.collection.temperature_interval_seconds = 0;
 
         assert!(config.validate().is_err());
+    }
+
+    #[test]
+    fn defaults_linux_hwmon_config() {
+        let config = AppConfig::default();
+
+        assert!(config.collectors.linux_hwmon.enabled);
+        assert!(config.collectors.linux_hwmon.nvme_enrichment_enabled);
+        assert!(config.collectors.linux_hwmon.expose_storage_model);
     }
 
     #[test]

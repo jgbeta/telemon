@@ -10,6 +10,7 @@ param(
     [string]$EnrollmentToken,
     [string]$UserName,
     [string]$DeviceName = $env:COMPUTERNAME,
+    [string]$MachineUuid = $env:TELEMON_MACHINE_UUID,
     [string]$AdvertisedAddr,
     [switch]$AddFirewallRule
 )
@@ -51,6 +52,9 @@ if ($RegistryServer) {
     if (-not $DeviceName) {
         $DeviceName = $env:COMPUTERNAME
     }
+    if (-not $MachineUuid -and $userInteractive) {
+        $MachineUuid = Read-Host "Machine UUID (blank for auto-generated local machine UUID)"
+    }
     if (-not $EnrollmentToken -or -not $UserName) {
         Write-Warning "Registration disabled; registry server requires EnrollmentToken and UserName"
         $RegistryServer = ""
@@ -75,6 +79,8 @@ server:
 identity:
   user_name: ""
   device_name: ""
+  machine_uuid: ""
+  machine_uuid_file: ""
 
 registration:
   enabled: false
@@ -87,18 +93,17 @@ registration:
 
 collection:
   scrape_cache_stale_after_seconds: 60
-  fake_interval_seconds: 5
   temperature_interval_seconds: 15
   sensor_rescan_interval_seconds: 300
   gpu_interval_seconds: 15
 
 collectors:
-  fake:
-    enabled: true
   linux_hwmon:
     enabled: false
     root: "/sys/class/hwmon"
     include_unknown_sensors: false
+    nvme_enrichment_enabled: true
+    expose_storage_model: true
     sensor_allowlist: []
     sensor_denylist: []
   nvidia_nvml:
@@ -215,11 +220,16 @@ Ensure-YamlSection -Path $configPath -Section "registration" -Lines @(
     "  scrape_port: 9185",
     "  advertised_addr: """""
 )
+Ensure-YamlScalarKey -Path $configPath -Section "identity" -Key "machine_uuid" -DefaultValue '""'
+Ensure-YamlScalarKey -Path $configPath -Section "identity" -Key "machine_uuid_file" -DefaultValue '""'
 Ensure-YamlScalarKey -Path $configPath -Section "registration" -Key "advertised_addr" -DefaultValue '""'
 
 if ($RegistryServer) {
     Set-YamlScalar -Path $configPath -Section "identity" -Key "user_name" -Value $UserName
     Set-YamlScalar -Path $configPath -Section "identity" -Key "device_name" -Value $DeviceName
+    if ($MachineUuid) {
+        Set-YamlScalar -Path $configPath -Section "identity" -Key "machine_uuid" -Value $MachineUuid
+    }
     Set-YamlScalar -Path $configPath -Section "registration" -Key "enabled" -Value "true" -Raw
     Set-YamlScalar -Path $configPath -Section "registration" -Key "registry_addr" -Value $RegistryServer
     Set-YamlScalar -Path $configPath -Section "registration" -Key "enrollment_token" -Value $EnrollmentToken

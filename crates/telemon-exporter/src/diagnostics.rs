@@ -2,7 +2,6 @@ use std::time::Duration;
 
 use crate::registration::DeviceInfoCollector;
 use crate::scheduler::{collect_snapshot_once, ScheduledCollector};
-use telemon_collectors::fake::FakeCollector;
 use telemon_collectors::gpu::nvidia::collector::NvidiaNvmlCollector;
 use telemon_collectors::temperature::linux_hwmon::LinuxHwmonCollector;
 use telemon_core::config::AppConfig;
@@ -25,13 +24,6 @@ pub fn build_info_metric() -> MetricSample {
 
 pub fn build_scheduled_collectors(config: &AppConfig) -> Vec<ScheduledCollector> {
     let mut collectors = Vec::new();
-
-    if config.collectors.fake.enabled {
-        collectors.push(ScheduledCollector::new(
-            Box::new(FakeCollector::new()),
-            Duration::from_secs(config.collection.fake_interval_seconds),
-        ));
-    }
 
     if config.collectors.linux_hwmon.enabled {
         collectors.push(
@@ -73,9 +65,6 @@ pub fn check_report(config: &AppConfig) -> String {
     report.push_str(&format!("listen: {}\n", config.server.listen));
     report.push_str("enabled collectors:\n");
 
-    if config.collectors.fake.enabled {
-        report.push_str("- fake\n");
-    }
     if config.collectors.linux_hwmon.enabled {
         report.push_str("- linux_hwmon\n");
     }
@@ -85,8 +74,7 @@ pub fn check_report(config: &AppConfig) -> String {
     if config.registration.enabled {
         report.push_str("- identity\n");
     }
-    if !config.collectors.fake.enabled
-        && !config.collectors.linux_hwmon.enabled
+    if !config.collectors.linux_hwmon.enabled
         && !config.collectors.nvidia_nvml.enabled
         && !config.registration.enabled
     {
@@ -105,11 +93,6 @@ pub fn print_metrics(config: &AppConfig) -> String {
 pub fn discover_report(config: &AppConfig) -> String {
     let mut report = String::new();
     report.push_str("collectors:\n");
-    report.push_str(&format!(
-        "- fake: available, enabled={}\n",
-        config.collectors.fake.enabled
-    ));
-
     let linux_state = LinuxHwmonCollector::discover_summary(&config.collectors.linux_hwmon);
     report.push_str(&format!(
         "- linux_hwmon: {}, enabled={}, root={}, include_unknown_sensors={}\n",

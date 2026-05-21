@@ -35,9 +35,9 @@ curl http://127.0.0.1:9186/prometheus/sd
 ```
 
 Prometheus is available at `http://localhost:9090`. Grafana is available at `http://localhost:3000` with `admin` / `change-me`.
-The stack includes a registry service at `http://localhost:9186`; enrolled
-clients register once, keep an opaque UUID locally, and heartbeat IP changes for
-Prometheus HTTP service discovery.
+The stack includes the Telemon hub at `http://localhost:9186`. Its internal
+registry capability enrolls clients once. Clients keep an opaque UUID locally
+and send heartbeats so IP changes reach Prometheus HTTP service discovery.
 Prometheus uses coarse device-level adaptive scrape buckets (`15s`, `10s`,
 `5s`, `1s`) for dynamic telemetry and a separate low-frequency static scrape
 for metadata-like values. Each dynamic scrape returns all enabled dynamic sensor
@@ -65,10 +65,10 @@ The current Prometheus metric catalog is documented in
 Implemented through phase 4:
 
 - CLI, YAML config validation, and logging.
-- Prometheus text metrics, fake collector, cache, scheduler, and HTTP endpoints.
-- Linux `/sys/class/hwmon` temperature collection, using read-only file access.
+- Prometheus text metrics, cache, scheduler, and HTTP endpoints.
+- Linux `/sys/class/hwmon` temperature collection, including sysfs-only NVMe drive identity labels and namespace capacity metrics.
 - NVIDIA NVML GPU collection with dynamic runtime loading.
-- Docker Compose registry, Prometheus, and Grafana stack.
+- Docker Compose hub, Prometheus, and Grafana stack.
 - UUID-based client registration and Prometheus HTTP service discovery.
 - Device-level adaptive scrape interval signaling and split dynamic/static
   metric endpoints.
@@ -77,7 +77,7 @@ Implemented through phase 4:
 - Production and side-by-side validation Docker exporter compose files.
 - Linux systemd packaging scripts, Windows service skeleton, and macOS LaunchDaemon skeleton.
 - Versioned release artifact generation and a Linux bootstrap installer for unsupported distributions and quick homelab installs.
-- Public GHCR image workflow for `telemon-exporter` and `telemon-registry`.
+- Public GHCR image workflow for `telemon-exporter` and `telemon-hub`.
 - Read-only debug bundle script.
 
 Out of scope for the current implementation:

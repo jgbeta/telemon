@@ -10,6 +10,8 @@ use super::nvml_ffi;
 
 const NAME_BUFFER_LEN: usize = 96;
 const UUID_BUFFER_LEN: usize = 96;
+const SERIAL_BUFFER_LEN: usize = 96;
+const VBIOS_BUFFER_LEN: usize = 96;
 
 #[derive(Debug, Error)]
 pub enum NvmlLoadError {
@@ -52,6 +54,12 @@ pub struct NvmlApi {
     nvml_device_get_utilization_rates: nvml_ffi::NvmlDeviceGetUtilizationRates,
     nvml_device_get_memory_info: nvml_ffi::NvmlDeviceGetMemoryInfo,
     nvml_device_get_fan_speed: nvml_ffi::NvmlDeviceGetFanSpeed,
+    nvml_device_get_serial: Option<nvml_ffi::NvmlDeviceGetSerial>,
+    nvml_device_get_vbios_version: Option<nvml_ffi::NvmlDeviceGetVbiosVersion>,
+    nvml_device_get_power_usage: Option<nvml_ffi::NvmlDeviceGetPowerUsage>,
+    nvml_device_get_enforced_power_limit: Option<nvml_ffi::NvmlDeviceGetEnforcedPowerLimit>,
+    nvml_device_get_clock_info: Option<nvml_ffi::NvmlDeviceGetClockInfo>,
+    nvml_device_get_performance_state: Option<nvml_ffi::NvmlDeviceGetPerformanceState>,
     nvml_error_string: nvml_ffi::NvmlErrorString,
 }
 
@@ -128,6 +136,17 @@ impl NvmlApi {
             "nvmlDeviceGetFanSpeed",
             b"nvmlDeviceGetFanSpeed\0",
         )?;
+        let nvml_device_get_serial = load_optional_symbol(&library, b"nvmlDeviceGetSerial\0");
+        let nvml_device_get_vbios_version =
+            load_optional_symbol(&library, b"nvmlDeviceGetVbiosVersion\0");
+        let nvml_device_get_power_usage =
+            load_optional_symbol(&library, b"nvmlDeviceGetPowerUsage\0");
+        let nvml_device_get_enforced_power_limit =
+            load_optional_symbol(&library, b"nvmlDeviceGetEnforcedPowerLimit\0");
+        let nvml_device_get_clock_info =
+            load_optional_symbol(&library, b"nvmlDeviceGetClockInfo\0");
+        let nvml_device_get_performance_state =
+            load_optional_symbol(&library, b"nvmlDeviceGetPerformanceState\0");
         let nvml_error_string = load_symbol(
             &library,
             library_name,
@@ -147,6 +166,12 @@ impl NvmlApi {
             nvml_device_get_utilization_rates,
             nvml_device_get_memory_info,
             nvml_device_get_fan_speed,
+            nvml_device_get_serial,
+            nvml_device_get_vbios_version,
+            nvml_device_get_power_usage,
+            nvml_device_get_enforced_power_limit,
+            nvml_device_get_clock_info,
+            nvml_device_get_performance_state,
             nvml_error_string,
         })
     }
@@ -253,6 +278,104 @@ impl NvmlApi {
             return Ok(None);
         }
         Ok(Some(percent as u32))
+    }
+
+    pub fn device_serial(&self, index: u32) -> Result<Option<String>, NvmlCallError> {
+        let Some(get_serial) = self.nvml_device_get_serial else {
+            return Ok(None);
+        };
+
+        let device = self.device_handle(index)?;
+        let mut buffer = [0 as c_char; SERIAL_BUFFER_LEN];
+        // NVML writes at most SERIAL_BUFFER_LEN bytes and NUL-terminates on success.
+        let result =
+            unsafe { get_serial(device, buffer.as_mut_ptr(), SERIAL_BUFFER_LEN as c_uint) };
+        if !self.check_optional_return("nvmlDeviceGetSerial", result)? {
+            return Ok(None);
+        }
+        buffer[SERIAL_BUFFER_LEN - 1] = 0 as c_char;
+        Ok(c_string_from_buffer(&buffer))
+    }
+
+    pub fn device_vbios_version(&self, index: u32) -> Result<Option<String>, NvmlCallError> {
+        let Some(get_vbios_version) = self.nvml_device_get_vbios_version else {
+            return Ok(None);
+        };
+
+        let device = self.device_handle(index)?;
+        let mut buffer = [0 as c_char; VBIOS_BUFFER_LEN];
+        // NVML writes at most VBIOS_BUFFER_LEN bytes and NUL-terminates on success.
+        let result =
+            unsafe { get_vbios_version(device, buffer.as_mut_ptr(), VBIOS_BUFFER_LEN as c_uint) };
+        if !self.check_optional_return("nvmlDeviceGetVbiosVersion", result)? {
+            return Ok(None);
+        }
+        buffer[VBIOS_BUFFER_LEN - 1] = 0 as c_char;
+        Ok(c_string_from_buffer(&buffer))
+    }
+
+    pub fn device_power_usage_milliwatts(&self, index: u32) -> Result<Option<u32>, NvmlCallError> {
+        let Some(get_power_usage) = self.nvml_device_get_power_usage else {
+            return Ok(None);
+        };
+
+        let device = self.device_handle(index)?;
+        let mut milliwatts: c_uint = 0;
+        // NVML writes current board power usage in milliwatts.
+        let result = unsafe { get_power_usage(device, &mut milliwatts) };
+        if !self.check_optional_return("nvmlDeviceGetPowerUsage", result)? {
+            return Ok(None);
+        }
+        Ok(Some(milliwatts as u32))
+    }
+
+    pub fn device_power_limit_milliwatts(&self, index: u32) -> Result<Option<u32>, NvmlCallError> {
+        let Some(get_enforced_power_limit) = self.nvml_device_get_enforced_power_limit else {
+            return Ok(None);
+        };
+
+        let device = self.device_handle(index)?;
+        let mut milliwatts: c_uint = 0;
+        // NVML writes current enforced power limit in milliwatts.
+        let result = unsafe { get_enforced_power_limit(device, &mut milliwatts) };
+        if !self.check_optional_return("nvmlDeviceGetEnforcedPowerLimit", result)? {
+            return Ok(None);
+        }
+        Ok(Some(milliwatts as u32))
+    }
+
+    pub fn device_clock_mhz(
+        &self,
+        index: u32,
+        clock_type: c_uint,
+    ) -> Result<Option<u32>, NvmlCallError> {
+        let Some(get_clock_info) = self.nvml_device_get_clock_info else {
+            return Ok(None);
+        };
+
+        let device = self.device_handle(index)?;
+        let mut mhz: c_uint = 0;
+        // NVML writes the requested clock value in MHz.
+        let result = unsafe { get_clock_info(device, clock_type, &mut mhz) };
+        if !self.check_optional_return("nvmlDeviceGetClockInfo", result)? {
+            return Ok(None);
+        }
+        Ok(Some(mhz as u32))
+    }
+
+    pub fn device_performance_state(&self, index: u32) -> Result<Option<u32>, NvmlCallError> {
+        let Some(get_performance_state) = self.nvml_device_get_performance_state else {
+            return Ok(None);
+        };
+
+        let device = self.device_handle(index)?;
+        let mut state: c_uint = 0;
+        // NVML writes a P-state number where lower values usually mean higher performance.
+        let result = unsafe { get_performance_state(device, &mut state) };
+        if !self.check_optional_return("nvmlDeviceGetPerformanceState", result)? {
+            return Ok(None);
+        }
+        Ok(Some(state as u32))
     }
 
     fn device_handle(&self, index: u32) -> Result<nvml_ffi::NvmlDevice, NvmlCallError> {

@@ -90,11 +90,11 @@ mod tests {
         let sample = MetricSample::counter(
             "telemon_test_total",
             "A test counter.",
-            labels(&[("collector", "fake")]),
+            labels(&[("collector", "example")]),
             2.0,
         );
 
-        assert!(encode(&[sample]).contains("telemon_test_total{collector=\"fake\"} 2\n"));
+        assert!(encode(&[sample]).contains("telemon_test_total{collector=\"example\"} 2\n"));
     }
 
     #[test]

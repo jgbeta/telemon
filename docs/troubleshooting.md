@@ -88,6 +88,10 @@ Unraid startup:
   `telemon_hwmon_chips_discovered`, and
   `telemon_hwmon_temperature_inputs_discovered` to distinguish zero host
   sensors from filters or classification gaps.
+- For NVMe drive identity, verify that `/sys/class/hwmon/hwmon*/name` reports
+  `nvme` and that the canonical hwmon path contains `/nvme/nvmeN/`. Use
+  `telemon exporter inspect-hardware --config <config> --format json` to see
+  local-only serials, firmware, PCI BDFs, and namespace capacity.
 
 NVIDIA NVML collector reports `library_missing`:
 
@@ -112,6 +116,17 @@ Useful NVIDIA checks:
 ```bash
 cargo run -p telemon-cli -- exporter discover --config config.example.yml
 cargo run -p telemon-cli -- exporter print-metrics --config config.example.yml
+```
+
+For raw local hardware discovery, use the inspection command. It prints JSON
+with readable hwmon attributes, emitted/skipped hwmon temperature inputs, NVML
+load status, GPU identity, and best-effort NVML fields such as serial, VBIOS,
+power, clocks, and performance state. This output is local debug data; serial numbers, VBIOS versions, and other
+identity/debug fields are not exported as Prometheus labels by default.
+
+```bash
+cargo run -p telemon-cli -- exporter inspect-hardware --config config.example.yml --format json
+telemon-exporter inspect-hardware --config /etc/telemon/exporter.yml --format json
 ```
 
 If you know where NVML is installed, add it explicitly:

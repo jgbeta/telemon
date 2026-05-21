@@ -2,7 +2,7 @@
 
 This directory runs the central monitoring stack:
 
-- The registry service accepts device enrollment and heartbeat updates.
+- The Telemon hub runs the internal registry for device enrollment and heartbeat updates.
 - Prometheus discovers registered devices through HTTP service discovery.
 - Grafana reads Prometheus and loads the included dashboards.
 
@@ -17,15 +17,15 @@ native bootstrap installer started through the Unraid User Scripts plugin.
   are enough.
 - For local development builds, the full project repository must be present.
 - The monitoring server is on the same LAN as the exporter hosts.
-- The registry service is reachable from exporter hosts on TCP `9186`.
+- The Telemon hub registry endpoint is reachable from exporter hosts on TCP `9186`.
 - After enrollment, each exporter host is reachable from the server on TCP `9185`.
 - Each exporter is bound to a LAN-reachable address, not only `127.0.0.1`.
 
-The production compose file pulls the registry image from GHCR by default. Set
+The production compose file pulls the hub image from GHCR by default. Set
 the image owner before starting the stack:
 
 ```bash
-export TELEMON_REGISTRY_IMAGE=ghcr.io/<owner>/telemon-registry:edge
+export TELEMON_HUB_IMAGE=ghcr.io/<owner>/telemon-hub:edge
 ```
 
 For local development builds, copy or clone the full repository to the server:
@@ -38,7 +38,7 @@ cd telemon
 If you copy files manually for development, copy the project root directory. Do
 not copy only `deploy/`.
 
-Use the local-build override when you want the registry image built from source:
+Use the local-build override when you want the hub image built from source:
 
 ```bash
 docker compose -f deploy/docker-compose.yml -f deploy/docker-compose.local-build.yml up -d --build
@@ -70,14 +70,14 @@ scrape_configs:
     metrics_path: /metrics
     scrape_interval: 15s
     http_sd_configs:
-      - url: "http://registry:9186/prometheus/sd/15s"
+      - url: "http://hub:9186/prometheus/sd/15s"
         refresh_interval: 5s
 
   - job_name: "telemon-static"
     metrics_path: /metrics/static
     scrape_interval: 300s
     http_sd_configs:
-      - url: "http://registry:9186/prometheus/sd"
+      - url: "http://hub:9186/prometheus/sd"
         refresh_interval: 30s
 ```
 
@@ -110,7 +110,7 @@ docker compose ps
 ```
 
 The `cd deploy` form still requires `deploy/` to live inside the full project
-directory because the registry image build context points at the project root.
+directory because the hub image build context points at the project root.
 
 Prometheus is available at:
 
@@ -156,7 +156,9 @@ Install each exporter with the registry address, enrollment token, user label,
 and device label. The registry returns an opaque UUID; the client stores it
 locally and sends heartbeats so IP changes are reflected in Prometheus
 discovery. Use the optional advertised address only when the scrape target is
-different from the registry-observed source IP.
+different from the registry-observed source IP. Use `TELEMON_MACHINE_UUID` or
+`--machine-uuid` when multiple OS installs should share one physical-machine
+identity while keeping separate registry `device_uuid` values.
 
 The client retries enrollment if the registry is temporarily unavailable, but
 setup is easiest to validate when the registry is already running.
@@ -169,6 +171,7 @@ sudo env \
   TELEMON_ENROLLMENT_TOKEN=change-me \
   TELEMON_USER_NAME=example-user \
   TELEMON_DEVICE_NAME=linux-desktop \
+  TELEMON_MACHINE_UUID=<shared-machine-uuid-if-dual-boot> \
   dpkg -i dist/linux/telemon-exporter_*.deb
 ```
 
@@ -183,14 +186,15 @@ export TELEMON_ENROLLMENT_TOKEN=change-me
 export TELEMON_USER_NAME=example-user
 export TELEMON_DEVICE_NAME=linux-server
 export TELEMON_ADVERTISED_ADDR=<server-lan-ip>
+export TELEMON_MACHINE_UUID=<shared-machine-uuid-if-dual-boot>
 
 export TELEMON_EXPORTER_IMAGE=ghcr.io/<owner>/telemon-exporter:edge
 docker compose -f deploy/exporter/docker-compose.production.yml up -d
 ```
 
-The production Docker exporter uses host networking, listens on `9185`, disables
-fake metrics, mounts host `/sys` read-only at `/host/sys`, and stores UUID/config
-state in the configured `/config` directory. For side-by-side native versus
+The production Docker exporter uses host networking, listens on `9185`,
+mounts host `/sys` read-only at `/host/sys`, and stores UUID/config state in
+the configured `/config` directory. For side-by-side native versus
 Docker validation, use the `9187` test compose file documented below.
 
 Linux bootstrap artifact fallback for unsupported distros and Unraid native
@@ -202,7 +206,8 @@ sudo bash install.sh \
   --registry-server registry.example.local:9186 \
   --enrollment-token change-me \
   --user-name example-user \
-  --device-name linux-desktop
+  --device-name linux-desktop \
+  --machine-uuid <shared-machine-uuid-if-dual-boot>
 ```
 
 On Unraid, add the installer's printed `nohup ... run-telemon-exporter.sh`
@@ -217,6 +222,7 @@ sudo bash packaging/linux/install.sh \
   --enrollment-token change-me \
   --user-name example-user \
   --device-name linux-desktop \
+  --machine-uuid <shared-machine-uuid-if-dual-boot> \
   ./target/release/telemon-exporter
 ```
 
@@ -229,7 +235,8 @@ Windows example:
   -EnrollmentToken change-me `
   -UserName example-user `
   -DeviceName gaming-pc `
-  -AdvertisedAddr exporter.example.local
+  -AdvertisedAddr exporter.example.local `
+  -MachineUuid <shared-machine-uuid-if-dual-boot>
 ```
 
 macOS example:
@@ -240,6 +247,7 @@ sudo packaging/macos/install.sh \
   --enrollment-token change-me \
   --user-name example-user \
   --device-name macbook \
+  --machine-uuid <shared-machine-uuid-if-dual-boot> \
   ./target/release/telemon-exporter
 ```
 
@@ -252,8 +260,8 @@ For Docker exporter details, including Unraid and optional NVIDIA setup, see
 
 For side-by-side Unraid native versus Docker validation, or OMV Docker
 validation, use `deploy/exporter/UNRAID_OMV_VALIDATION.md`. That flow runs the
-Docker exporter on port `9187` with fake metrics disabled so it can be compared
-directly against the native exporter on port `9185`.
+Docker exporter on port `9187` with the same real host collectors so it can be
+compared directly against the native exporter on port `9185`.
 
 Check the exporter from the monitoring server after enrollment:
 
@@ -270,7 +278,7 @@ Check registry health from the monitoring server:
 ```bash
 curl http://127.0.0.1:9186/healthz
 curl http://127.0.0.1:9186/prometheus/sd
-docker compose -f deploy/docker-compose.yml logs -f registry
+docker compose -f deploy/docker-compose.yml logs -f hub
 ```
 
 After a client enrolls, `/prometheus/sd` should return a target like
@@ -358,7 +366,7 @@ docker compose -f deploy/docker-compose.yml restart prometheus
 After changing registry config:
 
 ```bash
-docker compose -f deploy/docker-compose.yml restart registry
+docker compose -f deploy/docker-compose.yml restart hub
 ```
 
 After changing Grafana dashboards or provisioning files:
@@ -394,7 +402,7 @@ Docker build fails with `could not find Cargo.toml in /app`:
 
 - The server likely has only the `deploy/` directory, or Docker was run with the
   wrong build context.
-- The registry image needs the full Rust project source.
+- The hub image needs the full Rust project source.
 - Copy or clone the full repository to the server, then run:
 
 ```bash
@@ -402,7 +410,7 @@ docker compose -f deploy/docker-compose.yml config
 docker compose -f deploy/docker-compose.yml up -d
 ```
 
-- Confirm the resolved registry build context points to the project root:
+- Confirm the resolved hub build context points to the project root:
 
 ```bash
 docker compose -f deploy/docker-compose.yml config

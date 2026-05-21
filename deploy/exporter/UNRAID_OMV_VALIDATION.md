@@ -75,7 +75,6 @@ The test compose file intentionally uses:
 ```text
 TELEMON_LISTEN=0.0.0.0:9187
 TELEMON_SCRAPE_PORT=9187
-TELEMON_FAKE_ENABLED=false
 TELEMON_HWMON_ROOT=/host/sys/class/hwmon
 TELEMON_LINUX_HWMON_INCLUDE_UNKNOWN=true
 /sys -> /host/sys:ro
@@ -102,12 +101,14 @@ docker exec telemon-exporter-docker-test sh -lc \
 curl -s http://127.0.0.1:9187/metrics > /tmp/telemon-docker.metrics
 grep 'telemon_temperature_celsius.*source="linux_hwmon"' /tmp/telemon-docker.metrics
 grep -c 'telemon_temperature_celsius.*source="linux_hwmon"' /tmp/telemon-docker.metrics
-grep 'source="fake"' /tmp/telemon-docker.metrics
 ```
 
-The fake grep should return no lines. If fake metrics appear, the Docker test
-is not using the validation compose file or the generated config was not
-updated.
+If the hwmon count is unexpectedly low, run the hardware inspection command
+inside the container to compare raw discovery with emitted metrics:
+
+```bash
+docker exec telemon-exporter-docker-test telemon-exporter inspect-hardware --config /config/generated-exporter.yml --format json
+```
 
 Check registration and Prometheus service discovery from the monitoring server:
 

@@ -26,8 +26,8 @@ Optionally add a local firewall rule for TCP 9185:
 This allows TCP `9185` only from the Prometheus server. The older broad firewall option is still available:
 
 Registry enrollment also accepts `-RegistryServer`, `-EnrollmentToken`,
-`-UserName`, `-DeviceName`, and optional `-AdvertisedAddr` when the scrape
-target differs from the registry-observed source IP.
+`-UserName`, `-DeviceName`, optional `-AdvertisedAddr`, and optional
+`-MachineUuid` for dual-boot or multi-OS physical-machine grouping.
 
 ```powershell
 .\packaging\windows\install-service.ps1 -BinaryPath .\target\release\telemon-exporter.exe -AddFirewallRule

@@ -25,6 +25,8 @@ pub enum ExporterCommand {
     PrintMetrics(ConfigArgs),
     /// Discover available collectors.
     Discover(ConfigArgs),
+    /// Print local hardware discovery details as JSON.
+    InspectHardware(InspectHardwareArgs),
     /// Manage the native OS service.
     #[command(subcommand)]
     Service(ServiceCommand),
@@ -50,4 +52,12 @@ pub enum ServiceCommand {
 pub struct ConfigArgs {
     #[arg(long, value_name = "PATH")]
     pub config: PathBuf,
+}
+
+#[derive(Debug, Args)]
+pub struct InspectHardwareArgs {
+    #[arg(long, value_name = "PATH")]
+    pub config: PathBuf,
+    #[arg(long, value_name = "FORMAT", default_value = "json")]
+    pub format: String,
 }

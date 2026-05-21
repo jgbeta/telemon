@@ -40,13 +40,15 @@ To enroll the device with the registry during install:
   -EnrollmentToken change-me `
   -UserName example-user `
   -DeviceName gaming-pc `
-  -AdvertisedAddr exporter.example.local
+  -AdvertisedAddr exporter.example.local `
+  -MachineUuid <shared-machine-uuid-if-dual-boot>
 ```
 
 If `-PrometheusServerIp` is omitted, the installer derives the scrape source IP
 from `-RegistryServer` and adds a source-restricted inbound firewall rule.
 Omit `-AdvertisedAddr` to let the registry use the connection source IP as the
-Prometheus scrape target.
+Prometheus scrape target. Use `-MachineUuid` when dual-boot or multi-OS installs
+should share one physical-machine identity.
 
 The older broad firewall option is still available:
 

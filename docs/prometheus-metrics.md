@@ -55,22 +55,33 @@ default `honor_labels: false`, conflicting scraped labels can be renamed to
 | `telemon_collector_samples` | gauge | `/metrics` | `linux_hwmon` | `collector`, `kind` | Useful sample count from the last collection run; currently `kind="temperature"`. |
 | `telemon_hwmon_chips_discovered` | gauge | `/metrics` | `linux_hwmon` | `collector` | Number of Linux hwmon chip directories discovered. |
 | `telemon_hwmon_temperature_inputs_discovered` | gauge | `/metrics` | `linux_hwmon` | `collector` | Number of Linux hwmon `temp*_input` files discovered before filtering. |
-| `telemon_temperature_celsius` | gauge | `/metrics` | `fake`, `linux_hwmon`, `nvidia_nvml` | `component`, `sensor`, `source`, optional `gpu_index` | Dynamic temperature readings. |
-| `telemon_temperature_limit_celsius` | gauge | `/metrics/static` | `linux_hwmon` | `component`, `sensor`, `source`, `limit` | Static-ish warning/critical temperature thresholds where available. |
+| `telemon_temperature_celsius` | gauge | `/metrics` | `linux_hwmon`, `nvidia_nvml` | `component`, `sensor`, `source`, optional `gpu_index`, optional `storage_id`, optional `pci_bdf`, optional `storage_model` | Dynamic temperature readings. NVMe storage samples include stable drive labels when sysfs enrichment succeeds. |
+| `telemon_temperature_limit_celsius` | gauge | `/metrics/static` | `linux_hwmon` | `component`, `sensor`, `source`, `limit`, optional `storage_id`, optional `pci_bdf`, optional `storage_model` | Static-ish warning/critical temperature thresholds where available. |
+| `telemon_storage_device_info` | gauge | `/metrics/static` | `linux_hwmon` | `source`, `storage_id`, `controller`, optional `pci_bdf`, optional `storage_model`, optional `firmware_rev`, optional `state` | Linux NVMe identity from sysfs; value is always `1`. Serial numbers are not exposed as Prometheus labels. |
+| `telemon_storage_namespace_capacity_bytes` | gauge | `/metrics/static` | `linux_hwmon` | `source`, `storage_id`, `namespace` | Linux NVMe namespace capacity in bytes from sysfs block-sector counts. |
 | `telemon_gpu_info` | gauge | `/metrics/static` | `nvidia_nvml` | `gpu_index`, `vendor`, `source`, optional `name`, optional `uuid` | NVIDIA GPU identity; value is always `1`. |
 | `telemon_gpu_utilization_ratio` | gauge | `/metrics` | `nvidia_nvml` | `gpu_index`, `source`, `engine` | Ratio from `0` to `1`; `engine` is `graphics` or `memory`. |
 | `telemon_gpu_memory_total_bytes` | gauge | `/metrics/static` | `nvidia_nvml` | `gpu_index`, `source` | Static-ish total VRAM bytes. |
 | `telemon_gpu_memory_used_bytes` | gauge | `/metrics` | `nvidia_nvml` | `gpu_index`, `source` | Used VRAM bytes. |
 | `telemon_gpu_memory_free_bytes` | gauge | `/metrics` | `nvidia_nvml` | `gpu_index`, `source` | Free VRAM bytes. |
+| `telemon_gpu_power_usage_watts` | gauge | `/metrics` | `nvidia_nvml` | `gpu_index`, `source` | Current GPU power usage in watts. |
+| `telemon_gpu_power_limit_watts` | gauge | `/metrics/static` | `nvidia_nvml` | `gpu_index`, `source` | Static-ish enforced GPU power limit in watts. |
+| `telemon_gpu_clock_hertz` | gauge | `/metrics` | `nvidia_nvml` | `gpu_index`, `source`, `clock` | GPU clock speed in hertz; `clock` is `graphics` or `memory`. |
+| `telemon_gpu_performance_state` | gauge | `/metrics` | `nvidia_nvml` | `gpu_index`, `source` | Numeric NVIDIA P-state where `P0` is exported as `0`. |
 | `telemon_fan_speed_ratio` | gauge | `/metrics` | `nvidia_nvml` | `component`, `gpu_index`, `source` | Ratio from `0` to `1`; emitted only when fan speed is available and enabled. |
 
 ## Current Cardinality Notes
 
 - Full dynamic scrapes include all enabled dynamic sensor metrics for a device.
 - Sensor-level cardinality is mostly driven by `component`, `sensor`, `source`,
-  and `gpu_index`.
+  `gpu_index`, and NVMe `storage_id` when Linux sysfs enrichment is enabled.
 - `telemon_gpu_info{name=...}` is enabled by default; GPU UUID labels are
   opt-in through `collectors.nvidia_nvml.expose_gpu_uuid`.
+- NVMe model labels are enabled by default through
+  `collectors.linux_hwmon.expose_storage_model`; NVMe serial numbers stay
+  local-only in `inspect-hardware`.
+- Serial numbers, VBIOS versions, and other high-cardinality inspection fields
+  stay local-only unless explicitly promoted to metrics later.
 - `telemon_device_info` and `telemon_build_info` can overlap with
   registry target labels. Prefer registry labels for dashboard filters.
 - Long-term storage optimization should be handled later through downsampling

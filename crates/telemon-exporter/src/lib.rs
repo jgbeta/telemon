@@ -2,6 +2,7 @@ pub mod adaptive;
 pub mod cache;
 pub mod cli;
 pub mod diagnostics;
+pub mod hardware_inspect;
 pub mod http;
 pub mod registration;
 pub mod runtime;
@@ -39,6 +40,13 @@ pub async fn handle_command(command: ExporterCommand) -> anyhow::Result<()> {
             let config = load_config_and_init_logging(&args.config)?;
             info!(command = "discover", config_path = %args.config.display(), "discovering collectors");
             print!("{}", diagnostics::discover_report(&config));
+        }
+        ExporterCommand::InspectHardware(args) => {
+            if args.format != "json" {
+                anyhow::bail!("unsupported inspect-hardware format: {}", args.format);
+            }
+            let config = AppConfig::load_from_path(&args.config)?;
+            println!("{}", hardware_inspect::inspect_hardware_json(&config)?);
         }
         ExporterCommand::Service(command) => {
             service::handle(command).await?;

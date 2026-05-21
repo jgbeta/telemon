@@ -75,7 +75,8 @@ sudo bash install.sh \
 If you omit registry values in an interactive terminal, the script prompts for
 them. Blank user and device values default to the installing user and hostname.
 Blank registry server disables registration. Blank advertised address tells the
-registry to use the connection source IP as the Prometheus scrape target.
+registry to use the connection source IP as the Prometheus scrape target. Blank
+machine UUID lets the exporter create or reuse its local physical-machine UUID.
 
 Useful options:
 

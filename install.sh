@@ -255,6 +255,11 @@ prompt_registration_config() {
     read -r -p "Advertised scrape host/IP (blank to let registry observe): " ADVERTISED_ADDR
   fi
   ADVERTISED_ADDR="${ADVERTISED_ADDR:-}"
+
+  if [ -z "$MACHINE_UUID" ] && [ -t 0 ]; then
+    read -r -p "Machine UUID (blank for auto-generated local machine UUID): " MACHINE_UUID
+  fi
+  MACHINE_UUID="${MACHINE_UUID:-}"
 }
 
 sed_escape() {
@@ -386,7 +391,6 @@ registration:
 
 collection:
   scrape_cache_stale_after_seconds: 60
-  fake_interval_seconds: 5
   temperature_interval_seconds: 15
   sensor_rescan_interval_seconds: 300
   gpu_interval_seconds: 15
@@ -407,12 +411,12 @@ adaptive_sampling:
   cooldown_seconds: 60
 
 collectors:
-  fake:
-    enabled: true
   linux_hwmon:
     enabled: true
     root: "/sys/class/hwmon"
     include_unknown_sensors: false
+    nvme_enrichment_enabled: true
+    expose_storage_model: true
     sensor_allowlist: []
     sensor_denylist: []
   nvidia_nvml:

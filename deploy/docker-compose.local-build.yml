@@ -1,7 +1,7 @@
 services:
-  registry:
+  hub:
     build:
       context: ..
       dockerfile: deploy/registry/Dockerfile
-    image: telemon-registry:dev
+    image: telemon-hub:dev
 

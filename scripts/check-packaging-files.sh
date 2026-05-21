@@ -7,6 +7,7 @@ required_files=(
   "scripts/package-all-local.sh"
   "packaging/README.md"
   "packaging/linux/package-deb.sh"
+  "packaging/linux/telemon-exporter-setup"
   "packaging/linux/deb/control"
   "packaging/linux/deb/conffiles"
   "packaging/linux/deb/postinst"
@@ -55,6 +56,7 @@ bash -n install.sh
 bash -n packaging/linux/install.sh
 bash -n packaging/linux/uninstall.sh
 bash -n packaging/linux/package-deb.sh
+bash -n packaging/linux/telemon-exporter-setup
 bash -n packaging/linux/deb/postinst
 bash -n packaging/linux/deb/prerm
 bash -n packaging/linux/deb/postrm

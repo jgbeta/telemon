@@ -20,6 +20,14 @@ path:
 sudo dpkg -i dist/linux/telemon-exporter_*.deb
 ```
 
+If you install without enrollment environment variables, run the interactive setup helper afterward:
+
+```bash
+sudo telemon-exporter-setup
+```
+
+The setup helper prompts for registry, token, labels, optional advertised address, optional Prometheus IP, and optional machine UUID. It previews the values before writing config and restarting the service.
+
 To allow Prometheus to scrape this host during package install, pass the Prometheus server IP:
 
 ```bash
@@ -73,6 +81,7 @@ sudo env \
   TELEMON_USER_NAME=example-user \
   TELEMON_DEVICE_NAME=linux-desktop \
   TELEMON_ADVERTISED_ADDR=exporter.example.local \
+  TELEMON_MACHINE_UUID=<shared-machine-uuid-if-dual-boot> \
   dpkg -i dist/linux/telemon-exporter_*.deb
 ```
 
@@ -85,6 +94,7 @@ sudo bash packaging/linux/install.sh \
   --user-name example-user \
   --device-name linux-desktop \
   --advertised-addr exporter.example.local \
+  --machine-uuid <shared-machine-uuid-if-dual-boot> \
   ./target/release/telemon-exporter
 ```
 
@@ -99,6 +109,7 @@ Installed paths:
 bootstrap binary:  /usr/local/bin/telemon-exporter
 Config:            /etc/telemon/exporter.yml
 State:             /var/lib/telemon/exporter/device-id
+Setup helper:      /usr/bin/telemon-exporter-setup
 Service:           /lib/systemd/system/telemon-exporter.service or /etc/systemd/system/telemon-exporter.service
 Logs:              journald when systemd is used
 ```

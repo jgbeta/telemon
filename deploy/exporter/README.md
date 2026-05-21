@@ -19,8 +19,8 @@ docker build -f deploy/exporter/Dockerfile -t telemon-exporter:dev .
 ## Production Compose
 
 Use the production compose file for one exporter on a server/NAS host. It
-listens on `9185`, disables fake metrics, persists config/state under
-`/config`, and mounts host `/sys` read-only at `/host/sys`.
+listens on `9185`, persists config/state under `/config`, and mounts host
+`/sys` read-only at `/host/sys`.
 
 ```bash
 mkdir -p /srv/telemon/exporter
@@ -32,6 +32,7 @@ export TELEMON_ENROLLMENT_TOKEN=<token>
 export TELEMON_USER_NAME=<user label>
 export TELEMON_DEVICE_NAME=<device label>
 export TELEMON_ADVERTISED_ADDR=<server-lan-ip>
+export TELEMON_MACHINE_UUID=<shared-machine-uuid-if-dual-boot>
 
 docker compose -f deploy/exporter/docker-compose.production.yml up -d
 docker compose -f deploy/exporter/docker-compose.production.yml logs -f
@@ -86,7 +87,7 @@ compose file:
 
 - Runs on port `9187` so the native exporter can keep using `9185`.
 - Uses a separate config/state directory.
-- Disables fake metrics so fake data cannot hide a broken hwmon collector.
+- Uses the same real host collectors as the native exporter.
 - Mounts host `/sys` read-only at `/host/sys`.
 
 See `deploy/exporter/UNRAID_OMV_VALIDATION.md` for the exact Unraid and OMV
@@ -119,11 +120,18 @@ TELEMON_ENROLLMENT_TOKEN=<token>
 TELEMON_USER_NAME=<user label>
 TELEMON_DEVICE_NAME=unraid
 TELEMON_ADVERTISED_ADDR=<unraid-lan-ip>
+TELEMON_MACHINE_UUID=<shared-machine-uuid-if-dual-boot>
+TELEMON_LINUX_HWMON_NVME_ENRICHMENT_ENABLED=true
+TELEMON_LINUX_HWMON_EXPOSE_STORAGE_MODEL=true
 TELEMON_LINUX_HWMON_INCLUDE_UNKNOWN=true
 ```
 
 The UUID is stored at `/config/state/device-id`, so it survives container
 updates.
+
+NVMe enrichment uses only the mounted read-only `/sys` tree. It adds stable
+`storage_id` / `pci_bdf` labels and static namespace capacity metrics for NVMe
+drives; serial numbers remain local-only in `inspect-hardware`.
 
 `TELEMON_LINUX_HWMON_INCLUDE_UNKNOWN=true` is useful on Unraid and NAS
 hardware where kernel driver names may not map cleanly to known CPU, GPU, or
