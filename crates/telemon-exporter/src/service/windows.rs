@@ -1,5 +1,6 @@
 use std::ffi::OsString;
 use std::path::PathBuf;
+use std::sync::OnceLock;
 use std::time::Duration;
 
 use anyhow::{Context, Result};
@@ -20,6 +21,8 @@ use telemon_core::logging;
 const SERVICE_NAME: &str = "TelemonExporter";
 const SERVICE_DISPLAY_NAME: &str = "Telemon Exporter";
 
+static SERVICE_CONFIG_PATH: OnceLock<PathBuf> = OnceLock::new();
+
 pub async fn handle(command: ServiceCommand) -> Result<()> {
     match command {
         ServiceCommand::Install(args) => install(args.config),
@@ -27,10 +30,15 @@ pub async fn handle(command: ServiceCommand) -> Result<()> {
         ServiceCommand::Start => start(),
         ServiceCommand::Stop => stop(),
         ServiceCommand::Status => status(),
-        ServiceCommand::Run(args) => service_dispatcher::start(SERVICE_NAME, ffi_service_main)
-            .or_else(|_| run_service(args.config))
-            .context("failed to start Windows service dispatcher"),
+        ServiceCommand::Run(args) => run_service_command(args.config),
     }
+}
+
+fn run_service_command(config_path: PathBuf) -> Result<()> {
+    let _ = SERVICE_CONFIG_PATH.set(config_path.clone());
+    service_dispatcher::start(SERVICE_NAME, ffi_service_main)
+        .or_else(|_| run_service(config_path))
+        .context("failed to start Windows service dispatcher")
 }
 
 fn install(config_path: PathBuf) -> Result<()> {
@@ -121,7 +129,15 @@ fn service_main(arguments: Vec<OsString>) {
 }
 
 fn service_main_inner(arguments: Vec<OsString>) -> Result<()> {
-    let config_path = arguments
+    let config_path = config_path_from_arguments(&arguments)
+        .or_else(|| SERVICE_CONFIG_PATH.get().cloned())
+        .context("missing --config for Windows service run")?;
+
+    run_service(config_path)
+}
+
+fn config_path_from_arguments(arguments: &[OsString]) -> Option<PathBuf> {
+    arguments
         .windows(2)
         .find(|window| window[0] == "--config")
         .map(|window| PathBuf::from(&window[1]))
@@ -132,9 +148,6 @@ fn service_main_inner(arguments: Vec<OsString>) -> Result<()> {
                 .and_then(|index| arguments.get(index + 1))
                 .map(PathBuf::from)
         })
-        .context("missing --config for Windows service run")?;
-
-    run_service(config_path)
 }
 
 fn run_service(config_path: PathBuf) -> Result<()> {

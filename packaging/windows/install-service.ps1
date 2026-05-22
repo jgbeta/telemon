@@ -243,6 +243,75 @@ function Ensure-YamlScalarKey {
     $list | Set-Content -Path $Path -Encoding UTF8
 }
 
+function Show-ServiceStartupDiagnostics {
+    param(
+        [string]$ServiceName,
+        [string]$TargetBinary,
+        [string]$ConfigPath
+    )
+
+    Write-Warning "$ServiceName did not reach Running state"
+
+    $current = Get-Service -Name $ServiceName -ErrorAction SilentlyContinue
+    if ($current) {
+        Write-Warning "Current service status: $($current.Status)"
+    }
+
+    Write-Host "Service configuration:"
+    & sc.exe qc $ServiceName | Out-Host
+
+    Write-Host "Recent Service Control Manager events:"
+    $events = Get-WinEvent `
+        -FilterHashtable @{ LogName = "System"; ProviderName = "Service Control Manager"; StartTime = (Get-Date).AddMinutes(-10) } `
+        -MaxEvents 10 `
+        -ErrorAction SilentlyContinue
+    if ($events) {
+        $events | Select-Object TimeCreated, Id, LevelDisplayName, Message | Format-List | Out-String | Write-Host
+    } else {
+        Write-Host "No recent Service Control Manager events found."
+    }
+
+    Write-Host "Run this command locally to debug outside the service manager:"
+    Write-Host ('  "{0}" run --config "{1}"' -f $TargetBinary, $ConfigPath)
+}
+
+function Start-TelemonServiceBounded {
+    param(
+        [string]$ServiceName,
+        [string]$TargetBinary,
+        [string]$ConfigPath,
+        [int]$TimeoutSeconds = 30
+    )
+
+    $service = Get-Service -Name $ServiceName -ErrorAction Stop
+    if ($service.Status -ne "Running") {
+        $startOutput = & sc.exe start $ServiceName 2>&1
+        $startExitCode = $LASTEXITCODE
+        $startOutput | ForEach-Object { Write-Host $_ }
+        if ($startExitCode -ne 0) {
+            Show-ServiceStartupDiagnostics -ServiceName $ServiceName -TargetBinary $TargetBinary -ConfigPath $ConfigPath
+            throw "Failed to request start for $ServiceName"
+        }
+    }
+
+    $deadline = (Get-Date).AddSeconds($TimeoutSeconds)
+    while ((Get-Date) -lt $deadline) {
+        $service = Get-Service -Name $ServiceName -ErrorAction Stop
+        if ($service.Status -eq "Running") {
+            Write-Host "Installed and started $ServiceName"
+            return
+        }
+        if ($service.Status -eq "Stopped") {
+            Show-ServiceStartupDiagnostics -ServiceName $ServiceName -TargetBinary $TargetBinary -ConfigPath $ConfigPath
+            throw "$ServiceName stopped during startup"
+        }
+        Start-Sleep -Seconds 1
+    }
+
+    Show-ServiceStartupDiagnostics -ServiceName $ServiceName -TargetBinary $TargetBinary -ConfigPath $ConfigPath
+    throw "Timed out waiting for $ServiceName to start"
+}
+
 Ensure-YamlSection -Path $configPath -Section "identity" -Lines @(
     "identity:",
     "  user_name: """"",
@@ -290,6 +359,12 @@ if ($ServiceAccount -eq "LocalService") {
     icacls $ConfigDir /grant "NT AUTHORITY\LocalService:(OI)(CI)M" | Out-Null
 }
 
+Write-Host "Validating exporter config"
+& $targetBinary check --config $configPath
+if ($LASTEXITCODE -ne 0) {
+    throw "Exporter config validation failed: $configPath"
+}
+
 $arguments = "service run --config `"$configPath`""
 $service = Get-Service -Name $ServiceName -ErrorAction SilentlyContinue
 if ($service) {
@@ -328,5 +403,5 @@ if ($PrometheusServerIp) {
     }
 }
 
-Start-Service -Name $ServiceName
-Write-Host "Installed and started $ServiceName as $serviceAccountName"
+Start-TelemonServiceBounded -ServiceName $ServiceName -TargetBinary $targetBinary -ConfigPath $configPath
+Write-Host "Service account: $serviceAccountName"
