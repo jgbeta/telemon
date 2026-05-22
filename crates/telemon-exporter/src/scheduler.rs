@@ -230,12 +230,17 @@ fn is_static_metric(metric: &MetricSample) -> bool {
     matches!(
         metric.name.as_str(),
         telemon_core::metrics::names::COLLECTOR_SUPPORTED
+            | telemon_core::metrics::names::CPU_INFO
+            | telemon_core::metrics::names::COMPUTER_SYSTEM_INFO
+            | telemon_core::metrics::names::FILESYSTEM_SIZE_BYTES
             | telemon_core::metrics::names::GPU_INFO
             | telemon_core::metrics::names::GPU_MEMORY_TOTAL_BYTES
             | telemon_core::metrics::names::GPU_POWER_LIMIT_WATTS
             | telemon_core::metrics::names::STORAGE_DEVICE_INFO
+            | telemon_core::metrics::names::MEMORY_TOTAL_BYTES
             | telemon_core::metrics::names::STORAGE_NAMESPACE_CAPACITY_BYTES
             | telemon_core::metrics::names::TEMPERATURE_LIMIT_CELSIUS
+            | telemon_core::metrics::names::WINDOWS_OS_INFO
     )
 }
 
@@ -313,6 +318,60 @@ mod tests {
 
         assert!(is_static_metric(&storage_info));
         assert!(is_static_metric(&namespace_capacity));
+    }
+
+    #[test]
+    fn windows_inventory_and_stable_baseline_metrics_are_static() {
+        let os_info = MetricSample::gauge(
+            telemon_core::metrics::names::WINDOWS_OS_INFO,
+            "windows os info",
+            telemon_core::metrics::model::labels(&[]),
+            1.0,
+        );
+        let cpu_info = MetricSample::gauge(
+            telemon_core::metrics::names::CPU_INFO,
+            "cpu info",
+            telemon_core::metrics::model::labels(&[]),
+            1.0,
+        );
+        let computer_info = MetricSample::gauge(
+            telemon_core::metrics::names::COMPUTER_SYSTEM_INFO,
+            "computer info",
+            telemon_core::metrics::model::labels(&[]),
+            1.0,
+        );
+        let memory_total = MetricSample::gauge(
+            telemon_core::metrics::names::MEMORY_TOTAL_BYTES,
+            "memory total",
+            telemon_core::metrics::model::labels(&[]),
+            16.0,
+        );
+        let memory_available = MetricSample::gauge(
+            telemon_core::metrics::names::MEMORY_AVAILABLE_BYTES,
+            "memory available",
+            telemon_core::metrics::model::labels(&[]),
+            6.0,
+        );
+        let filesystem_size = MetricSample::gauge(
+            telemon_core::metrics::names::FILESYSTEM_SIZE_BYTES,
+            "filesystem size",
+            telemon_core::metrics::model::labels(&[]),
+            512.0,
+        );
+        let filesystem_free = MetricSample::gauge(
+            telemon_core::metrics::names::FILESYSTEM_FREE_BYTES,
+            "filesystem free",
+            telemon_core::metrics::model::labels(&[]),
+            128.0,
+        );
+
+        assert!(is_static_metric(&os_info));
+        assert!(is_static_metric(&cpu_info));
+        assert!(is_static_metric(&computer_info));
+        assert!(is_static_metric(&memory_total));
+        assert!(is_static_metric(&filesystem_size));
+        assert!(!is_static_metric(&memory_available));
+        assert!(!is_static_metric(&filesystem_free));
     }
 
     #[test]

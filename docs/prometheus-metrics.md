@@ -53,6 +53,19 @@ default `honor_labels: false`, conflicting scraped labels can be renamed to
 | `telemon_collector_errors_total` | counter | `/metrics` | all collectors | `collector` | Total collector errors observed by the exporter process. |
 | `telemon_collector_last_success_timestamp_seconds` | gauge | `/metrics` | all collectors | `collector` | Unix timestamp of last successful collector run. |
 | `telemon_collector_samples` | gauge | `/metrics` | `linux_hwmon` | `collector`, `kind` | Useful sample count from the last collection run; currently `kind="temperature"`. |
+| `telemon_uptime_seconds` | gauge | `/metrics` | `windows_baseline` | `source` | System uptime in seconds from Windows APIs. |
+| `telemon_cpu_usage_ratio` | gauge | `/metrics` | `windows_baseline` | `component`, `source` | Total system CPU usage ratio from `0` to `1`; first sample appears after the second collection cycle. |
+| `telemon_memory_total_bytes` | gauge | `/metrics/static` | `windows_baseline` | `source` | Total physical memory in bytes. |
+| `telemon_memory_available_bytes` | gauge | `/metrics` | `windows_baseline` | `source` | Available physical memory in bytes. |
+| `telemon_memory_used_bytes` | gauge | `/metrics` | `windows_baseline` | `source` | Used physical memory in bytes. |
+| `telemon_filesystem_size_bytes` | gauge | `/metrics/static` | `windows_baseline` | `source`, `volume`, `drive_type` | Filesystem size for included Windows volumes. |
+| `telemon_filesystem_free_bytes` | gauge | `/metrics` | `windows_baseline` | `source`, `volume`, `drive_type` | Free bytes for included Windows volumes. |
+| `telemon_filesystem_available_bytes` | gauge | `/metrics` | `windows_baseline` | `source`, `volume`, `drive_type` | Bytes available to the exporter process for included Windows volumes. |
+| `telemon_network_receive_bytes_total` | counter | `/metrics` | `windows_baseline` | `source`, `if_index`, `interface` | Total bytes received by a Windows network interface. |
+| `telemon_network_transmit_bytes_total` | counter | `/metrics` | `windows_baseline` | `source`, `if_index`, `interface` | Total bytes transmitted by a Windows network interface. |
+| `telemon_windows_os_info` | gauge | `/metrics/static` | `windows_inventory` | `source`, `os`, `version`, `build`, `arch` | Windows OS identity; value is always `1`. |
+| `telemon_cpu_info` | gauge | `/metrics/static` | `windows_inventory` | `source`, `model`, `architecture`, `logical_processors` | CPU identity and topology information; value is always `1`. |
+| `telemon_computer_system_info` | gauge | `/metrics/static` | `windows_inventory` | `source`, `computer_name`, `arch` | Windows computer identity information; value is always `1`. |
 | `telemon_hwmon_chips_discovered` | gauge | `/metrics` | `linux_hwmon` | `collector` | Number of Linux hwmon chip directories discovered. |
 | `telemon_hwmon_temperature_inputs_discovered` | gauge | `/metrics` | `linux_hwmon` | `collector` | Number of Linux hwmon `temp*_input` files discovered before filtering. |
 | `telemon_temperature_celsius` | gauge | `/metrics` | `linux_hwmon`, `nvidia_nvml` | `component`, `sensor`, `source`, optional `gpu_index`, optional `storage_id`, optional `pci_bdf`, optional `storage_model` | Dynamic temperature readings. NVMe storage samples include stable drive labels when sysfs enrichment succeeds. |
@@ -82,6 +95,8 @@ default `honor_labels: false`, conflicting scraped labels can be renamed to
   local-only in `inspect-hardware`.
 - Serial numbers, VBIOS versions, and other high-cardinality inspection fields
   stay local-only unless explicitly promoted to metrics later.
+- Windows baseline metrics come from Win32 APIs and do not require LibreHardwareMonitor. Generic Windows temperature classes are not used for production CPU temperature.
+- Windows network interface labels use interface aliases and indexes. Use `collectors.windows_baseline.network_interface_allowlist` or `network_interface_denylist` if a host exposes noisy virtual adapters.
 - `telemon_device_info` and `telemon_build_info` can overlap with
   registry target labels. Prefer registry labels for dashboard filters.
 - Long-term storage optimization should be handled later through downsampling

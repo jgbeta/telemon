@@ -2,7 +2,7 @@ use std::ffi::OsString;
 use std::path::PathBuf;
 use std::time::Duration;
 
-use anyhow::{bail, Context, Result};
+use anyhow::{Context, Result};
 use tokio::sync::watch;
 use windows_service::service::{
     ServiceAccess, ServiceControl, ServiceControlAccept, ServiceErrorControl, ServiceInfo,
@@ -80,7 +80,7 @@ fn start() -> Result<()> {
         .open_service(SERVICE_NAME, ServiceAccess::START)
         .context("failed to open Windows service")?;
     service
-        .start(&[])
+        .start::<OsString>(&[])
         .context("failed to start Windows service")?;
     println!("started {SERVICE_NAME}");
     Ok(())

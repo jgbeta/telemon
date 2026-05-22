@@ -26,6 +26,7 @@ tracing = "0.1"
 tracing-subscriber = { version = "0.3", features = ["env-filter"] }
 uuid = { version = "=1.10.0", features = ["v4", "serde"] }
 windows-service = "0.6"
+windows-sys = "0.61.2"
 
 telemon-core = { path = "crates/telemon-core" }
 telemon-collectors = { path = "crates/telemon-collectors" }

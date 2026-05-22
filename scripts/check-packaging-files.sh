@@ -14,6 +14,7 @@ required_files=(
   "packaging/linux/deb/prerm"
   "packaging/linux/deb/postrm"
   "packaging/windows/install-service.ps1"
+  "packaging/windows/config.default.yml"
   "packaging/windows/uninstall-service.ps1"
   "packaging/windows/service-smoke-test.ps1"
   "packaging/macos/com.telemon.exporter.plist"

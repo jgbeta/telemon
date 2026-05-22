@@ -1,6 +1,6 @@
 # Windows Install
 
-Phase 3 supports a Windows service skeleton. Windows MSI packaging and Windows temperature collection are deferred to Phase 5.
+Windows support currently uses the PowerShell service installer. MSI packaging and CPU/motherboard temperature providers are still deferred, but the Windows exporter emits real baseline OS metrics and optional NVIDIA NVML GPU metrics.
 
 ## Build
 
@@ -12,16 +12,15 @@ cargo build --release
 
 ## Install
 
-For UUID enrollment, start the central registry stack first and confirm the
-client host can reach `http://<server-ip>:9186/healthz`. The service retries
-registration if the registry is temporarily unavailable, but first install is
-easiest to verify with the registry online.
+For UUID enrollment, start the central registry stack first and confirm the client host can reach `http://<server-ip>:9186/healthz`. The service retries registration if the registry is temporarily unavailable, but first install is easiest to verify with the registry online.
 
 Run from Administrator PowerShell:
 
 ```powershell
 .\packaging\windows\install-service.ps1 -BinaryPath .\target\release\telemon-exporter.exe
 ```
+
+The installer creates `C:\ProgramData\Telemon\exporter.yml` from `packaging\windows\config.default.yml` on first install and preserves it on later runs. The default Windows config disables Linux hwmon, enables Windows baseline/inventory collectors, and leaves NVIDIA NVML enabled as an optional collector.
 
 To add a source-restricted inbound firewall rule for the Prometheus server:
 
@@ -44,17 +43,23 @@ To enroll the device with the registry during install:
   -MachineUuid <shared-machine-uuid-if-dual-boot>
 ```
 
-If `-PrometheusServerIp` is omitted, the installer derives the scrape source IP
-from `-RegistryServer` and adds a source-restricted inbound firewall rule.
-Omit `-AdvertisedAddr` to let the registry use the connection source IP as the
-Prometheus scrape target. Use `-MachineUuid` when dual-boot or multi-OS installs
-should share one physical-machine identity.
+If `-PrometheusServerIp` is omitted, the installer derives the scrape source IP from `-RegistryServer` and adds a source-restricted inbound firewall rule. Omit `-AdvertisedAddr` to let the registry use the connection source IP as the Prometheus scrape target. Use `-MachineUuid` when dual-boot or multi-OS installs should share one physical-machine identity.
 
 The older broad firewall option is still available:
 
 ```powershell
 .\packaging\windows\install-service.ps1 -BinaryPath .\target\release\telemon-exporter.exe -AddFirewallRule
 ```
+
+If Windows API access fails under the default service identity, test with the explicit escape hatch:
+
+```powershell
+.\packaging\windows\install-service.ps1 `
+  -BinaryPath .\target\release\telemon-exporter.exe `
+  -ServiceAccount LocalSystem
+```
+
+Keep `LocalService` as the default unless testing shows the host needs broader permissions.
 
 Installed paths:
 
@@ -76,6 +81,8 @@ Invoke-WebRequest http://<exporter-lan-ip>:9185/metrics
 Invoke-WebRequest http://<exporter-lan-ip>:9185/metrics/static
 ```
 
+Expected Windows MVP metrics include uptime, total CPU usage after the second collection cycle, memory bytes, fixed local filesystem bytes, network byte counters, Windows OS info, CPU info, and computer-system info. NVIDIA GPU metrics appear on Windows machines where `nvml.dll` is available.
+
 For registry enrollment, check the registry from the monitoring server:
 
 ```powershell
@@ -94,5 +101,4 @@ curl.exe -v --connect-timeout 3 http://<exporter-lan-ip>:9185/metrics
 .\packaging\windows\uninstall-service.ps1
 ```
 
-The uninstall script preserves `C:\ProgramData\Telemon\exporter.yml`.
-It removes firewall rules named `Telemon Exporter 9185*`.
+The uninstall script preserves `C:\ProgramData\Telemon\exporter.yml`. It removes firewall rules named `Telemon Exporter 9185*`.

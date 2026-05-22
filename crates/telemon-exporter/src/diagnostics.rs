@@ -4,6 +4,8 @@ use crate::registration::DeviceInfoCollector;
 use crate::scheduler::{collect_snapshot_once, ScheduledCollector};
 use telemon_collectors::gpu::nvidia::collector::NvidiaNvmlCollector;
 use telemon_collectors::temperature::linux_hwmon::LinuxHwmonCollector;
+use telemon_collectors::windows::baseline::WindowsBaselineCollector;
+use telemon_collectors::windows::inventory::WindowsInventoryCollector;
 use telemon_core::config::AppConfig;
 use telemon_core::metrics::encode;
 use telemon_core::metrics::model::{labels, MetricSample};
@@ -49,6 +51,24 @@ pub fn build_scheduled_collectors(config: &AppConfig) -> Vec<ScheduledCollector>
         );
     }
 
+    if config.collectors.windows_baseline.enabled {
+        collectors.push(ScheduledCollector::new(
+            Box::new(WindowsBaselineCollector::new(
+                config.collectors.windows_baseline.clone(),
+            )),
+            Duration::from_secs(config.collection.windows_baseline_interval_seconds),
+        ));
+    }
+
+    if config.collectors.windows_inventory.enabled {
+        collectors.push(ScheduledCollector::static_collector(
+            Box::new(WindowsInventoryCollector::new(
+                config.collectors.windows_inventory.clone(),
+            )),
+            Duration::from_secs(config.collection.windows_inventory_interval_seconds),
+        ));
+    }
+
     if config.registration.enabled {
         collectors.push(ScheduledCollector::static_collector(
             Box::new(DeviceInfoCollector::new(config.clone())),
@@ -71,11 +91,19 @@ pub fn check_report(config: &AppConfig) -> String {
     if config.collectors.nvidia_nvml.enabled {
         report.push_str("- nvidia_nvml\n");
     }
+    if config.collectors.windows_baseline.enabled {
+        report.push_str("- windows_baseline\n");
+    }
+    if config.collectors.windows_inventory.enabled {
+        report.push_str("- windows_inventory\n");
+    }
     if config.registration.enabled {
         report.push_str("- identity\n");
     }
     if !config.collectors.linux_hwmon.enabled
         && !config.collectors.nvidia_nvml.enabled
+        && !config.collectors.windows_baseline.enabled
+        && !config.collectors.windows_inventory.enabled
         && !config.registration.enabled
     {
         report.push_str("- none\n");
@@ -118,6 +146,20 @@ pub fn discover_report(config: &AppConfig) -> String {
     if let Some(message) = nvidia_state.message {
         report.push_str(&format!("    message: {}\n", message));
     }
+    let windows_baseline_state =
+        WindowsBaselineCollector::discover_summary(&config.collectors.windows_baseline);
+    report.push_str(&format!(
+        "- windows_baseline: {}, enabled={}\n",
+        windows_baseline_state, config.collectors.windows_baseline.enabled
+    ));
+
+    let windows_inventory_state =
+        WindowsInventoryCollector::discover_summary(&config.collectors.windows_inventory);
+    report.push_str(&format!(
+        "- windows_inventory: {}, enabled={}\n",
+        windows_inventory_state, config.collectors.windows_inventory.enabled
+    ));
+
     report.push_str(&format!(
         "- registration: enabled={}, registry_addr={}, advertised_addr={}\n",
         config.registration.enabled,

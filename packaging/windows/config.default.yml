@@ -1,5 +1,4 @@
 server:
-  #listen: "127.0.0.1:9185"
   listen: "0.0.0.0:9185"
   metrics_path: "/metrics"
   static_metrics_path: "/metrics/static"
@@ -29,8 +28,6 @@ collection:
   static_info_interval_seconds: 300
 
 adaptive_sampling:
-  # Device-level only: each /metrics scrape still includes all enabled dynamic sensors.
-  # Prefer future downsampling/retention policy for long-term storage optimization.
   enabled: true
   levels:
     normal_seconds: 15
@@ -46,7 +43,7 @@ adaptive_sampling:
 
 collectors:
   linux_hwmon:
-    enabled: true
+    enabled: false
     root: "/sys/class/hwmon"
     include_unknown_sensors: false
     nvme_enrichment_enabled: true
@@ -62,7 +59,7 @@ collectors:
     fan_speed_enabled: true
 
   windows_baseline:
-    enabled: false
+    enabled: true
     include_removable_drives: false
     include_remote_drives: false
     network_interface_allowlist: []
@@ -72,7 +69,7 @@ collectors:
       - "teredo"
 
   windows_inventory:
-    enabled: false
+    enabled: true
 
 logging:
   level: "info"

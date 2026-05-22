@@ -1,6 +1,6 @@
-# Windows Service Skeleton
+# Windows Service Installer
 
-Phase 3 adds Windows service installation and management scripts without Windows hardware collectors.
+The Windows packaging path is currently the PowerShell service installer. MSI packaging is still deferred, but the installed exporter now has real Windows baseline and inventory collectors.
 
 Default paths:
 
@@ -11,26 +11,32 @@ Service: TelemonExporter
 Port:    9185/tcp
 ```
 
+The first install copies `packaging\windows\config.default.yml` to `C:\ProgramData\Telemon\exporter.yml`. Later installs preserve the existing config.
+
 Install from an Administrator PowerShell:
 
 ```powershell
 .\packaging\windows\install-service.ps1 -BinaryPath .\target\release\telemon-exporter.exe
 ```
 
-Optionally add a local firewall rule for TCP 9185:
+Optionally add a source-restricted firewall rule for TCP `9185`:
 
 ```powershell
 .\packaging\windows\install-service.ps1 -BinaryPath .\target\release\telemon-exporter.exe -PrometheusServerIp <monitoring-server-ip>
 ```
 
-This allows TCP `9185` only from the Prometheus server. The older broad firewall option is still available:
+Registry enrollment also accepts `-RegistryServer`, `-EnrollmentToken`, `-UserName`, `-DeviceName`, optional `-AdvertisedAddr`, and optional `-MachineUuid` for dual-boot or multi-OS physical-machine grouping.
 
-Registry enrollment also accepts `-RegistryServer`, `-EnrollmentToken`,
-`-UserName`, `-DeviceName`, optional `-AdvertisedAddr`, and optional
-`-MachineUuid` for dual-boot or multi-OS physical-machine grouping.
+The older broad firewall option is still available:
 
 ```powershell
 .\packaging\windows\install-service.ps1 -BinaryPath .\target\release\telemon-exporter.exe -AddFirewallRule
+```
+
+If the default `LocalService` identity cannot access required Windows APIs on a test host, retry with:
+
+```powershell
+.\packaging\windows\install-service.ps1 -BinaryPath .\target\release\telemon-exporter.exe -ServiceAccount LocalSystem
 ```
 
 Check:
@@ -39,6 +45,7 @@ Check:
 Get-Service TelemonExporter
 Invoke-WebRequest http://127.0.0.1:9185/healthz
 Invoke-WebRequest http://127.0.0.1:9185/metrics
+Invoke-WebRequest http://127.0.0.1:9185/metrics/static
 ```
 
 Uninstall:
@@ -47,4 +54,4 @@ Uninstall:
 .\packaging\windows\uninstall-service.ps1
 ```
 
-The uninstall script preserves `C:\ProgramData\Telemon\exporter.yml`.
+The uninstall script removes `Telemon Exporter 9185*` firewall rules and preserves `C:\ProgramData\Telemon\exporter.yml`.

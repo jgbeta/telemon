@@ -69,6 +69,8 @@ pub struct CollectionConfig {
     pub temperature_interval_seconds: u64,
     pub sensor_rescan_interval_seconds: u64,
     pub gpu_interval_seconds: u64,
+    pub windows_baseline_interval_seconds: u64,
+    pub windows_inventory_interval_seconds: u64,
     pub static_info_interval_seconds: u64,
 }
 
@@ -104,6 +106,8 @@ pub struct AdaptiveTemperatureConfig {
 pub struct CollectorsConfig {
     pub linux_hwmon: LinuxHwmonConfig,
     pub nvidia_nvml: NvidiaNvmlConfig,
+    pub windows_baseline: WindowsBaselineConfig,
+    pub windows_inventory: WindowsInventoryConfig,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -126,6 +130,22 @@ pub struct NvidiaNvmlConfig {
     pub expose_gpu_name: bool,
     pub expose_gpu_uuid: bool,
     pub fan_speed_enabled: bool,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(default)]
+pub struct WindowsBaselineConfig {
+    pub enabled: bool,
+    pub include_removable_drives: bool,
+    pub include_remote_drives: bool,
+    pub network_interface_allowlist: Vec<String>,
+    pub network_interface_denylist: Vec<String>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(default)]
+pub struct WindowsInventoryConfig {
+    pub enabled: bool,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -192,6 +212,14 @@ impl AppConfig {
         validate_positive(
             self.collection.gpu_interval_seconds,
             "collection.gpu_interval_seconds",
+        )?;
+        validate_positive(
+            self.collection.windows_baseline_interval_seconds,
+            "collection.windows_baseline_interval_seconds",
+        )?;
+        validate_positive(
+            self.collection.windows_inventory_interval_seconds,
+            "collection.windows_inventory_interval_seconds",
         )?;
         validate_positive(
             self.collection.static_info_interval_seconds,
@@ -355,6 +383,8 @@ impl Default for CollectionConfig {
             temperature_interval_seconds: 15,
             sensor_rescan_interval_seconds: 300,
             gpu_interval_seconds: 15,
+            windows_baseline_interval_seconds: 15,
+            windows_inventory_interval_seconds: 300,
             static_info_interval_seconds: 300,
         }
     }
@@ -419,12 +449,40 @@ impl Default for NvidiaNvmlConfig {
     }
 }
 
+impl Default for WindowsBaselineConfig {
+    fn default() -> Self {
+        Self {
+            enabled: default_windows_collector_enabled(),
+            include_removable_drives: false,
+            include_remote_drives: false,
+            network_interface_allowlist: Vec::new(),
+            network_interface_denylist: vec![
+                "loopback".to_string(),
+                "isatap".to_string(),
+                "teredo".to_string(),
+            ],
+        }
+    }
+}
+
+impl Default for WindowsInventoryConfig {
+    fn default() -> Self {
+        Self {
+            enabled: default_windows_collector_enabled(),
+        }
+    }
+}
+
 impl Default for LoggingConfig {
     fn default() -> Self {
         Self {
             level: "info".to_string(),
         }
     }
+}
+
+fn default_windows_collector_enabled() -> bool {
+    cfg!(target_os = "windows")
 }
 
 fn validate_positive(value: u64, name: &str) -> Result<()> {
@@ -486,6 +544,24 @@ mod tests {
         assert!(config.collectors.nvidia_nvml.expose_gpu_name);
         assert!(!config.collectors.nvidia_nvml.expose_gpu_uuid);
         assert!(config.collectors.nvidia_nvml.fan_speed_enabled);
+    }
+
+    #[test]
+    fn defaults_windows_collector_config() {
+        let config = AppConfig::default();
+
+        assert_eq!(config.collection.windows_baseline_interval_seconds, 15);
+        assert_eq!(config.collection.windows_inventory_interval_seconds, 300);
+        assert_eq!(
+            config.collectors.windows_baseline.enabled,
+            cfg!(target_os = "windows")
+        );
+        assert_eq!(
+            config.collectors.windows_inventory.enabled,
+            cfg!(target_os = "windows")
+        );
+        assert!(!config.collectors.windows_baseline.include_removable_drives);
+        assert!(!config.collectors.windows_baseline.include_remote_drives);
     }
 
     #[test]

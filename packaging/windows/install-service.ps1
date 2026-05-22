@@ -12,10 +12,15 @@ param(
     [string]$DeviceName = $env:COMPUTERNAME,
     [string]$MachineUuid = $env:TELEMON_MACHINE_UUID,
     [string]$AdvertisedAddr,
+    [ValidateSet("LocalService", "LocalSystem")]
+    [string]$ServiceAccount = "LocalService",
     [switch]$AddFirewallRule
 )
 
 $ErrorActionPreference = "Stop"
+
+$scriptDir = Split-Path -Parent $PSCommandPath
+$defaultConfigPath = Join-Path $scriptDir "config.default.yml"
 
 $currentIdentity = [Security.Principal.WindowsIdentity]::GetCurrent()
 $principal = New-Object Security.Principal.WindowsPrincipal($currentIdentity)
@@ -71,10 +76,14 @@ $deviceIdPath = Join-Path $ConfigDir "state\device-id"
 Copy-Item -Force -Path $BinaryPath -Destination $targetBinary
 
 if (-not (Test-Path $configPath)) {
+    if (Test-Path $defaultConfigPath) {
+        Copy-Item -Path $defaultConfigPath -Destination $configPath
+    } else {
 @"
 server:
   listen: "0.0.0.0:9185"
   metrics_path: "/metrics"
+  static_metrics_path: "/metrics/static"
 
 identity:
   user_name: ""
@@ -96,6 +105,23 @@ collection:
   temperature_interval_seconds: 15
   sensor_rescan_interval_seconds: 300
   gpu_interval_seconds: 15
+  windows_baseline_interval_seconds: 15
+  windows_inventory_interval_seconds: 300
+  static_info_interval_seconds: 300
+
+adaptive_sampling:
+  enabled: true
+  levels:
+    normal_seconds: 15
+    warm_seconds: 10
+    hot_seconds: 5
+    critical_seconds: 1
+  temperature:
+    enabled: true
+    warm_celsius: 60
+    hot_celsius: 75
+    critical_celsius: 85
+  cooldown_seconds: 60
 
 collectors:
   linux_hwmon:
@@ -112,10 +138,22 @@ collectors:
     expose_gpu_name: true
     expose_gpu_uuid: false
     fan_speed_enabled: true
+  windows_baseline:
+    enabled: true
+    include_removable_drives: false
+    include_remote_drives: false
+    network_interface_allowlist: []
+    network_interface_denylist:
+      - "loopback"
+      - "isatap"
+      - "teredo"
+  windows_inventory:
+    enabled: true
 
 logging:
   level: "info"
 "@ | Set-Content -Path $configPath -Encoding UTF8
+    }
 }
 
 function Set-YamlScalar {
@@ -223,6 +261,10 @@ Ensure-YamlSection -Path $configPath -Section "registration" -Lines @(
 Ensure-YamlScalarKey -Path $configPath -Section "identity" -Key "machine_uuid" -DefaultValue '""'
 Ensure-YamlScalarKey -Path $configPath -Section "identity" -Key "machine_uuid_file" -DefaultValue '""'
 Ensure-YamlScalarKey -Path $configPath -Section "registration" -Key "advertised_addr" -DefaultValue '""'
+Ensure-YamlScalarKey -Path $configPath -Section "server" -Key "static_metrics_path" -DefaultValue '"/metrics/static"'
+Ensure-YamlScalarKey -Path $configPath -Section "collection" -Key "windows_baseline_interval_seconds" -DefaultValue '15'
+Ensure-YamlScalarKey -Path $configPath -Section "collection" -Key "windows_inventory_interval_seconds" -DefaultValue '300'
+Ensure-YamlScalarKey -Path $configPath -Section "collection" -Key "static_info_interval_seconds" -DefaultValue '300'
 
 if ($RegistryServer) {
     Set-YamlScalar -Path $configPath -Section "identity" -Key "user_name" -Value $UserName
@@ -243,7 +285,10 @@ if ($RegistryServer) {
     }
 }
 
-icacls $ConfigDir /grant "NT AUTHORITY\LocalService:(OI)(CI)M" | Out-Null
+$serviceAccountName = if ($ServiceAccount -eq "LocalSystem") { "LocalSystem" } else { "NT AUTHORITY\LocalService" }
+if ($ServiceAccount -eq "LocalService") {
+    icacls $ConfigDir /grant "NT AUTHORITY\LocalService:(OI)(CI)M" | Out-Null
+}
 
 $arguments = "service run --config `"$configPath`""
 $service = Get-Service -Name $ServiceName -ErrorAction SilentlyContinue
@@ -251,7 +296,7 @@ if ($service) {
     if ($service.Status -ne "Stopped") {
         Stop-Service -Name $ServiceName -Force
     }
-    sc.exe config $ServiceName binPath= "`"$targetBinary`" $arguments" start= auto obj= "NT AUTHORITY\LocalService" | Out-Null
+    sc.exe config $ServiceName binPath= "`"$targetBinary`" $arguments" start= auto obj= "$serviceAccountName" | Out-Null
 } else {
     New-Service `
         -Name $ServiceName `
@@ -259,7 +304,7 @@ if ($service) {
         -BinaryPathName "`"$targetBinary`" $arguments" `
         -StartupType Automatic `
         -Description "Native Prometheus exporter for LAN hardware telemetry"
-    sc.exe config $ServiceName obj= "NT AUTHORITY\LocalService" | Out-Null
+    sc.exe config $ServiceName obj= "$serviceAccountName" | Out-Null
 }
 
 if ($AddFirewallRule) {
@@ -284,4 +329,4 @@ if ($PrometheusServerIp) {
 }
 
 Start-Service -Name $ServiceName
-Write-Host "Installed and started $ServiceName"
+Write-Host "Installed and started $ServiceName as $serviceAccountName"
