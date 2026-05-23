@@ -249,26 +249,26 @@ function Invoke-ExporterConfigCheck {
         [string]$ConfigPath
     )
 
-    $nativePreference = Get-Variable -Name PSNativeCommandUseErrorActionPreference -ErrorAction SilentlyContinue
-    $previousNativePreference = $null
-    if ($nativePreference) {
-        $previousNativePreference = $PSNativeCommandUseErrorActionPreference
-        $PSNativeCommandUseErrorActionPreference = $false
-    }
+    $startInfo = [System.Diagnostics.ProcessStartInfo]::new()
+    $startInfo.FileName = $TargetBinary
+    $startInfo.UseShellExecute = $false
+    $startInfo.RedirectStandardOutput = $true
+    $startInfo.RedirectStandardError = $true
+    $startInfo.CreateNoWindow = $true
+    $escapedConfigPath = $ConfigPath.Replace("`"", "\`"")
+    $startInfo.Arguments = "check --config `"$escapedConfigPath`""
 
-    try {
-        $output = & $TargetBinary check --config $ConfigPath 2>&1
-        $exitCode = $LASTEXITCODE
-    } finally {
-        if ($nativePreference) {
-            $PSNativeCommandUseErrorActionPreference = $previousNativePreference
-        }
-    }
+    $process = [System.Diagnostics.Process]::new()
+    $process.StartInfo = $startInfo
+    $null = $process.Start()
+    $stdout = $process.StandardOutput.ReadToEnd()
+    $stderr = $process.StandardError.ReadToEnd()
+    $process.WaitForExit()
 
-    $message = ($output | Out-String).Trim()
+    $message = (($stdout, $stderr) -join [Environment]::NewLine).Trim()
 
     [PSCustomObject]@{
-        ExitCode = $exitCode
+        ExitCode = $process.ExitCode
         Output = $message
     }
 }
