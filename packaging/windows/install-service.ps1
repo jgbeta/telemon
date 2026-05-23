@@ -243,6 +243,60 @@ function Ensure-YamlScalarKey {
     $list | Set-Content -Path $Path -Encoding UTF8
 }
 
+function Invoke-ExporterConfigCheck {
+    param(
+        [string]$TargetBinary,
+        [string]$ConfigPath
+    )
+
+    $nativePreference = Get-Variable -Name PSNativeCommandUseErrorActionPreference -ErrorAction SilentlyContinue
+    $previousNativePreference = $null
+    if ($nativePreference) {
+        $previousNativePreference = $PSNativeCommandUseErrorActionPreference
+        $PSNativeCommandUseErrorActionPreference = $false
+    }
+
+    try {
+        $output = & $TargetBinary check --config $ConfigPath 2>&1
+        $exitCode = $LASTEXITCODE
+    } finally {
+        if ($nativePreference) {
+            $PSNativeCommandUseErrorActionPreference = $previousNativePreference
+        }
+    }
+
+    $message = ($output | Out-String).Trim()
+
+    [PSCustomObject]@{
+        ExitCode = $exitCode
+        Output = $message
+    }
+}
+
+function Reset-TelemonConfigFromDefault {
+    param(
+        [string]$ConfigPath,
+        [string]$DefaultConfigPath,
+        [string]$Reason
+    )
+
+    $stamp = Get-Date -Format "yyyyMMdd-HHmmss"
+    $backupPath = "${ConfigPath}.invalid-${stamp}"
+
+    if (Test-Path $ConfigPath) {
+        Move-Item -Force -Path $ConfigPath -Destination $backupPath
+        Write-Warning "Existing Telemon config is invalid and was backed up to $backupPath"
+    }
+
+    if (-not (Test-Path $DefaultConfigPath)) {
+        throw "Default config is missing: $DefaultConfigPath"
+    }
+
+    Copy-Item -Force -Path $DefaultConfigPath -Destination $ConfigPath
+    Write-Warning "Invalid config reason: $Reason"
+    Write-Host "Created fresh Telemon config: $ConfigPath"
+}
+
 function Show-ServiceStartupDiagnostics {
     param(
         [string]$ServiceName,
@@ -312,6 +366,14 @@ function Start-TelemonServiceBounded {
     throw "Timed out waiting for $ServiceName to start"
 }
 
+$initialConfigValidation = Invoke-ExporterConfigCheck -TargetBinary $targetBinary -ConfigPath $configPath
+if ($initialConfigValidation.ExitCode -ne 0) {
+    Reset-TelemonConfigFromDefault `
+        -ConfigPath $configPath `
+        -DefaultConfigPath $defaultConfigPath `
+        -Reason $initialConfigValidation.Output
+}
+
 Ensure-YamlSection -Path $configPath -Section "identity" -Lines @(
     "identity:",
     "  user_name: """"",
@@ -360,8 +422,11 @@ if ($ServiceAccount -eq "LocalService") {
 }
 
 Write-Host "Validating exporter config"
-& $targetBinary check --config $configPath
-if ($LASTEXITCODE -ne 0) {
+$finalConfigValidation = Invoke-ExporterConfigCheck -TargetBinary $targetBinary -ConfigPath $configPath
+if ($finalConfigValidation.Output) {
+    Write-Host $finalConfigValidation.Output
+}
+if ($finalConfigValidation.ExitCode -ne 0) {
     throw "Exporter config validation failed: $configPath"
 }
 
