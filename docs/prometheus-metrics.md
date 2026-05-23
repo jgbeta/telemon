@@ -68,7 +68,7 @@ default `honor_labels: false`, conflicting scraped labels can be renamed to
 | `telemon_computer_system_info` | gauge | `/metrics/static` | `windows_inventory` | `source`, `computer_name`, `arch` | Windows computer identity information; value is always `1`. |
 | `telemon_hwmon_chips_discovered` | gauge | `/metrics` | `linux_hwmon` | `collector` | Number of Linux hwmon chip directories discovered. |
 | `telemon_hwmon_temperature_inputs_discovered` | gauge | `/metrics` | `linux_hwmon` | `collector` | Number of Linux hwmon `temp*_input` files discovered before filtering. |
-| `telemon_temperature_celsius` | gauge | `/metrics` | `linux_hwmon`, `nvidia_nvml` | `component`, `sensor`, `source`, optional `gpu_index`, optional `storage_id`, optional `pci_bdf`, optional `storage_model` | Dynamic temperature readings. NVMe storage samples include stable drive labels when sysfs enrichment succeeds. |
+| `telemon_temperature_celsius` | gauge | `/metrics` | `linux_hwmon`, `nvidia_nvml`, `windows_lhm_wmi` | `component`, `sensor`, `source`, optional `gpu_index`, optional `storage_id`, optional `pci_bdf`, optional `storage_model` | Dynamic temperature readings. NVMe storage samples include stable drive labels when sysfs enrichment succeeds. Windows CPU/motherboard/storage samples require LibreHardwareMonitor WMI. |
 | `telemon_temperature_limit_celsius` | gauge | `/metrics/static` | `linux_hwmon` | `component`, `sensor`, `source`, `limit`, optional `storage_id`, optional `pci_bdf`, optional `storage_model` | Static-ish warning/critical temperature thresholds where available. |
 | `telemon_storage_device_info` | gauge | `/metrics/static` | `linux_hwmon` | `source`, `storage_id`, `controller`, optional `pci_bdf`, optional `storage_model`, optional `firmware_rev`, optional `state` | Linux NVMe identity from sysfs; value is always `1`. Serial numbers are not exposed as Prometheus labels. |
 | `telemon_storage_namespace_capacity_bytes` | gauge | `/metrics/static` | `linux_hwmon` | `source`, `storage_id`, `namespace` | Linux NVMe namespace capacity in bytes from sysfs block-sector counts. |
@@ -95,7 +95,7 @@ default `honor_labels: false`, conflicting scraped labels can be renamed to
   local-only in `inspect-hardware`.
 - Serial numbers, VBIOS versions, and other high-cardinality inspection fields
   stay local-only unless explicitly promoted to metrics later.
-- Windows baseline metrics come from Win32 APIs and do not require LibreHardwareMonitor. Generic Windows temperature classes are not used for production CPU temperature.
+- Windows baseline metrics come from Win32 APIs and do not require LibreHardwareMonitor. Generic Windows temperature classes are not used for production CPU temperature. CPU/motherboard/storage temperatures use the optional `windows_lhm_wmi` collector when LibreHardwareMonitor exposes `root\LibreHardwareMonitor`.
 - Windows network interface labels use interface aliases and indexes. Use `collectors.windows_baseline.network_interface_allowlist` or `network_interface_denylist` if a host exposes noisy virtual adapters.
 - `telemon_device_info` and `telemon_build_info` can overlap with
   registry target labels. Prefer registry labels for dashboard filters.

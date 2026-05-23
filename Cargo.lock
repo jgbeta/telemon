@@ -440,6 +440,7 @@ dependencies = [
  "anyhow",
  "libloading",
  "serde",
+ "serde_json",
  "telemon-core",
  "thiserror",
  "tracing",

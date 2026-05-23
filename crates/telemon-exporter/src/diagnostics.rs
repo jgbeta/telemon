@@ -6,6 +6,7 @@ use telemon_collectors::gpu::nvidia::collector::NvidiaNvmlCollector;
 use telemon_collectors::temperature::linux_hwmon::LinuxHwmonCollector;
 use telemon_collectors::windows::baseline::WindowsBaselineCollector;
 use telemon_collectors::windows::inventory::WindowsInventoryCollector;
+use telemon_collectors::windows::lhm_wmi::WindowsLhmWmiCollector;
 use telemon_core::config::AppConfig;
 use telemon_core::metrics::encode;
 use telemon_core::metrics::model::{labels, MetricSample};
@@ -46,6 +47,18 @@ pub fn build_scheduled_collectors(config: &AppConfig) -> Vec<ScheduledCollector>
                     config.collectors.nvidia_nvml.clone(),
                 )),
                 Duration::from_secs(config.collection.gpu_interval_seconds),
+            )
+            .adaptive(config.adaptive_sampling.levels.normal_seconds),
+        );
+    }
+
+    if config.collectors.windows_lhm_wmi.enabled {
+        collectors.push(
+            ScheduledCollector::new(
+                Box::new(WindowsLhmWmiCollector::new(
+                    config.collectors.windows_lhm_wmi.clone(),
+                )),
+                Duration::from_secs(config.collection.temperature_interval_seconds),
             )
             .adaptive(config.adaptive_sampling.levels.normal_seconds),
         );
@@ -94,6 +107,9 @@ pub fn check_report(config: &AppConfig) -> String {
     if config.collectors.windows_baseline.enabled {
         report.push_str("- windows_baseline\n");
     }
+    if config.collectors.windows_lhm_wmi.enabled {
+        report.push_str("- windows_lhm_wmi\n");
+    }
     if config.collectors.windows_inventory.enabled {
         report.push_str("- windows_inventory\n");
     }
@@ -103,6 +119,7 @@ pub fn check_report(config: &AppConfig) -> String {
     if !config.collectors.linux_hwmon.enabled
         && !config.collectors.nvidia_nvml.enabled
         && !config.collectors.windows_baseline.enabled
+        && !config.collectors.windows_lhm_wmi.enabled
         && !config.collectors.windows_inventory.enabled
         && !config.registration.enabled
     {
@@ -152,6 +169,21 @@ pub fn discover_report(config: &AppConfig) -> String {
         "- windows_baseline: {}, enabled={}\n",
         windows_baseline_state, config.collectors.windows_baseline.enabled
     ));
+
+    let windows_lhm_state =
+        WindowsLhmWmiCollector::discover_summary(&config.collectors.windows_lhm_wmi);
+    report.push_str("- windows_lhm_wmi:\n");
+    report.push_str(&format!("    enabled: {}\n", windows_lhm_state.enabled));
+    report.push_str(&format!("    supported: {}\n", windows_lhm_state.supported));
+    report.push_str(&format!("    status: {}\n", windows_lhm_state.status));
+    report.push_str(&format!("    namespace: {}\n", windows_lhm_state.namespace));
+    report.push_str(&format!(
+        "    sensors: {}\n",
+        windows_lhm_state.sensor_count
+    ));
+    if let Some(message) = windows_lhm_state.message {
+        report.push_str(&format!("    message: {}\n", message));
+    }
 
     let windows_inventory_state =
         WindowsInventoryCollector::discover_summary(&config.collectors.windows_inventory);

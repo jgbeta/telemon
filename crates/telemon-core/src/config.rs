@@ -108,6 +108,7 @@ pub struct CollectorsConfig {
     pub nvidia_nvml: NvidiaNvmlConfig,
     pub windows_baseline: WindowsBaselineConfig,
     pub windows_inventory: WindowsInventoryConfig,
+    pub windows_lhm_wmi: WindowsLhmWmiConfig,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -146,6 +147,17 @@ pub struct WindowsBaselineConfig {
 #[serde(default)]
 pub struct WindowsInventoryConfig {
     pub enabled: bool,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(default)]
+pub struct WindowsLhmWmiConfig {
+    pub enabled: bool,
+    pub namespace: String,
+    pub include_unknown_sensors: bool,
+    pub sensor_allowlist: Vec<String>,
+    pub sensor_denylist: Vec<String>,
+    pub require_provider: bool,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -264,6 +276,11 @@ impl AppConfig {
 
         if self.collectors.linux_hwmon.root.as_os_str().is_empty() {
             bail!("collectors.linux_hwmon.root must not be empty");
+        }
+        if self.collectors.windows_lhm_wmi.enabled
+            && self.collectors.windows_lhm_wmi.namespace.trim().is_empty()
+        {
+            bail!("collectors.windows_lhm_wmi.namespace must not be empty when enabled");
         }
 
         match self.logging.level.as_str() {
@@ -475,6 +492,19 @@ impl Default for WindowsInventoryConfig {
     }
 }
 
+impl Default for WindowsLhmWmiConfig {
+    fn default() -> Self {
+        Self {
+            enabled: default_windows_collector_enabled(),
+            namespace: r"root\LibreHardwareMonitor".to_string(),
+            include_unknown_sensors: false,
+            sensor_allowlist: Vec::new(),
+            sensor_denylist: Vec::new(),
+            require_provider: false,
+        }
+    }
+}
+
 impl Default for LoggingConfig {
     fn default() -> Self {
         Self {
@@ -599,6 +629,14 @@ mod tests {
         assert_eq!(
             config.collectors.windows_inventory.enabled,
             cfg!(target_os = "windows")
+        );
+        assert_eq!(
+            config.collectors.windows_lhm_wmi.enabled,
+            cfg!(target_os = "windows")
+        );
+        assert_eq!(
+            config.collectors.windows_lhm_wmi.namespace,
+            r"root\LibreHardwareMonitor"
         );
         assert!(!config.collectors.windows_baseline.include_removable_drives);
         assert!(!config.collectors.windows_baseline.include_remote_drives);

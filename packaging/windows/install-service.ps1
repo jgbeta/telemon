@@ -199,6 +199,13 @@ collectors:
       - "teredo"
   windows_inventory:
     enabled: true
+  windows_lhm_wmi:
+    enabled: true
+    namespace: "root\\LibreHardwareMonitor"
+    include_unknown_sensors: false
+    sensor_allowlist: []
+    sensor_denylist: []
+    require_provider: false
 
 logging:
   level: "info"
