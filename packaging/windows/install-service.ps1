@@ -22,6 +22,55 @@ $ErrorActionPreference = "Stop"
 $scriptDir = Split-Path -Parent $PSCommandPath
 $defaultConfigPath = Join-Path $scriptDir "config.default.yml"
 
+function Get-Utf8NoBomEncoding {
+    New-Object System.Text.UTF8Encoding -ArgumentList $false
+}
+
+function Write-Utf8NoBomText {
+    param(
+        [string]$Path,
+        [AllowEmptyString()]
+        [string]$Value
+    )
+
+    if ($null -eq $Value) {
+        $Value = ""
+    }
+    if ($Value.Length -gt 0 -and [int][char]$Value[0] -eq 0xfeff) {
+        $Value = $Value.Substring(1)
+    }
+
+    [System.IO.File]::WriteAllText($Path, $Value, (Get-Utf8NoBomEncoding))
+}
+
+function Write-Utf8NoBomLines {
+    param(
+        [string]$Path,
+        [string[]]$Lines
+    )
+
+    $text = ($Lines -join [Environment]::NewLine)
+    if ($Lines.Count -gt 0) {
+        $text = "$text$([Environment]::NewLine)"
+    }
+
+    Write-Utf8NoBomText -Path $Path -Value $text
+}
+
+function Append-Utf8NoBomLines {
+    param(
+        [string]$Path,
+        [string[]]$Lines
+    )
+
+    $text = ($Lines -join [Environment]::NewLine)
+    if ($Lines.Count -gt 0) {
+        $text = "$text$([Environment]::NewLine)"
+    }
+
+    [System.IO.File]::AppendAllText($Path, $text, (Get-Utf8NoBomEncoding))
+}
+
 $currentIdentity = [Security.Principal.WindowsIdentity]::GetCurrent()
 $principal = New-Object Security.Principal.WindowsPrincipal($currentIdentity)
 if (-not $principal.IsInRole([Security.Principal.WindowsBuiltInRole]::Administrator)) {
@@ -77,9 +126,10 @@ Copy-Item -Force -Path $BinaryPath -Destination $targetBinary
 
 if (-not (Test-Path $configPath)) {
     if (Test-Path $defaultConfigPath) {
-        Copy-Item -Path $defaultConfigPath -Destination $configPath
+        $defaultConfigText = [System.IO.File]::ReadAllText($defaultConfigPath)
+        Write-Utf8NoBomText -Path $configPath -Value $defaultConfigText
     } else {
-@"
+        $fallbackConfig = @"
 server:
   listen: "0.0.0.0:9185"
   metrics_path: "/metrics"
@@ -152,7 +202,8 @@ collectors:
 
 logging:
   level: "info"
-"@ | Set-Content -Path $configPath -Encoding UTF8
+"@
+        Write-Utf8NoBomText -Path $configPath -Value $fallbackConfig
     }
 }
 
@@ -166,7 +217,7 @@ function Set-YamlScalar {
     )
 
     $currentSection = ""
-    $lines = Get-Content -Path $Path
+    $lines = Get-Content -Path $Path -Encoding UTF8
     $updated = foreach ($line in $lines) {
         if ($line -match '^([^ \t][^:]*):') {
             $currentSection = $Matches[1]
@@ -181,7 +232,7 @@ function Set-YamlScalar {
             $line
         }
     }
-    $updated | Set-Content -Path $Path -Encoding UTF8
+    Write-Utf8NoBomLines -Path $Path -Lines $updated
 }
 
 function Ensure-YamlSection {
@@ -191,10 +242,10 @@ function Ensure-YamlSection {
         [string[]]$Lines
     )
 
-    $content = Get-Content -Raw -Path $Path
+    $content = Get-Content -Raw -Path $Path -Encoding UTF8
     if ($content -notmatch "(?m)^$([Regex]::Escape($Section)):\s*$") {
-        Add-Content -Path $Path -Encoding UTF8 -Value ""
-        Add-Content -Path $Path -Encoding UTF8 -Value $Lines
+        $appendLines = @("") + $Lines
+        Append-Utf8NoBomLines -Path $Path -Lines $appendLines
     }
 }
 
@@ -206,7 +257,7 @@ function Ensure-YamlScalarKey {
         [string]$DefaultValue
     )
 
-    $lines = @(Get-Content -Path $Path)
+    $lines = @(Get-Content -Path $Path -Encoding UTF8)
     $inSection = $false
     $found = $false
     $insertAt = $null
@@ -240,7 +291,7 @@ function Ensure-YamlScalarKey {
     $list = [System.Collections.Generic.List[string]]::new()
     $list.AddRange([string[]]$lines)
     $list.Insert($insertAt, "  ${Key}: $DefaultValue")
-    $list | Set-Content -Path $Path -Encoding UTF8
+    Write-Utf8NoBomLines -Path $Path -Lines $list
 }
 
 function Invoke-ExporterConfigCheck {
@@ -292,7 +343,8 @@ function Reset-TelemonConfigFromDefault {
         throw "Default config is missing: $DefaultConfigPath"
     }
 
-    Copy-Item -Force -Path $DefaultConfigPath -Destination $ConfigPath
+    $defaultConfigText = [System.IO.File]::ReadAllText($DefaultConfigPath)
+    Write-Utf8NoBomText -Path $ConfigPath -Value $defaultConfigText
     Write-Warning "Invalid config reason: $Reason"
     Write-Host "Created fresh Telemon config: $ConfigPath"
 }

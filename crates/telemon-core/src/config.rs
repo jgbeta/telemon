@@ -159,7 +159,8 @@ impl AppConfig {
         let path = path.as_ref();
         let text = fs::read_to_string(path)
             .with_context(|| format!("failed to read config {}", path.display()))?;
-        let config: Self = serde_yaml::from_str(&text)
+        let text = strip_leading_bom(&text);
+        let config: Self = serde_yaml::from_str(text)
             .with_context(|| format!("failed to parse config {}", path.display()))?;
         config.validate()?;
         Ok(config)
@@ -286,7 +287,8 @@ impl RegistryAppConfig {
         let path = path.as_ref();
         let text = fs::read_to_string(path)
             .with_context(|| format!("failed to read registry config {}", path.display()))?;
-        let config: Self = serde_yaml::from_str(&text)
+        let text = strip_leading_bom(&text);
+        let config: Self = serde_yaml::from_str(text)
             .with_context(|| format!("failed to parse registry config {}", path.display()))?;
         config.validate()?;
         Ok(config)
@@ -481,6 +483,10 @@ impl Default for LoggingConfig {
     }
 }
 
+fn strip_leading_bom(text: &str) -> &str {
+    text.strip_prefix('\u{feff}').unwrap_or(text)
+}
+
 fn default_windows_collector_enabled() -> bool {
     cfg!(target_os = "windows")
 }
@@ -504,9 +510,43 @@ fn default_device_name() -> String {
 mod tests {
     use super::*;
 
+    fn temp_config_path(name: &str) -> PathBuf {
+        let nanos = std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .unwrap()
+            .as_nanos();
+        std::env::temp_dir().join(format!("telemon-{name}-{}-{nanos}.yml", std::process::id()))
+    }
+
     #[test]
     fn default_config_is_valid() {
         AppConfig::default().validate().unwrap();
+    }
+
+    #[test]
+    fn app_config_loads_utf8_bom_prefixed_yaml() {
+        let path = temp_config_path("app-bom");
+        std::fs::write(&path, "\u{feff}server:\n  listen: \"127.0.0.1:9185\"\n").unwrap();
+
+        let config = AppConfig::load_from_path(&path).unwrap();
+
+        std::fs::remove_file(&path).unwrap();
+        assert_eq!(config.server.listen, "127.0.0.1:9185");
+    }
+
+    #[test]
+    fn registry_config_loads_utf8_bom_prefixed_yaml() {
+        let path = temp_config_path("registry-bom");
+        std::fs::write(
+            &path,
+            "\u{feff}registry:\n  listen: \"127.0.0.1:9186\"\n  enrollment_token: \"secret\"\n",
+        )
+        .unwrap();
+
+        let config = RegistryAppConfig::load_from_path(&path).unwrap();
+
+        std::fs::remove_file(&path).unwrap();
+        assert_eq!(config.registry.listen, "127.0.0.1:9186");
     }
 
     #[test]
