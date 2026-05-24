@@ -1,6 +1,6 @@
 # Windows Service Installer
 
-The Windows packaging path is currently the PowerShell service installer. MSI packaging is still deferred, but the installed exporter now has real Windows baseline and inventory collectors plus optional LibreHardwareMonitor WMI temperatures.
+The Windows packaging path is currently the PowerShell service installer. MSI packaging is still deferred, but the installed exporter now has real Windows baseline and inventory collectors plus optional LibreHardwareMonitor HTTP temperatures.
 
 Default paths:
 
@@ -33,13 +33,13 @@ The older broad firewall option is still available:
 .\packaging\windows\install-service.ps1 -BinaryPath .\target\release\telemon-exporter.exe -AddFirewallRule
 ```
 
-LibreHardwareMonitor WMI CPU temperatures are optional. Validate provider availability with:
+LibreHardwareMonitor CPU temperatures are optional. Enable LibreHardwareMonitor's Remote Web Server, then validate provider availability with:
 
 ```powershell
-Get-CimInstance -Namespace root\LibreHardwareMonitor -ClassName Sensor | Where-Object { $_.SensorType -eq "Temperature" }
+Invoke-RestMethod http://127.0.0.1:8085/data.json
 ```
 
-If the namespace is missing, `windows_lhm_wmi` reports unsupported/down and the exporter keeps running.
+If LibreHardwareMonitor is not running or the endpoint is unavailable, `windows_lhm_http` reports unsupported/down and the exporter keeps running. The older `windows_lhm_wmi` collector remains experimental and disabled by default.
 
 If the default `LocalService` identity cannot access required Windows APIs on a test host, retry with:
 

@@ -74,6 +74,15 @@ collectors:
   windows_inventory:
     enabled: false
 
+  windows_lhm_http:
+    enabled: false
+    url: "http://127.0.0.1:8085/data.json"
+    timeout_ms: 1500
+    include_unknown_sensors: false
+    sensor_allowlist: []
+    sensor_denylist: []
+    require_provider: false
+
   windows_lhm_wmi:
     enabled: false
     namespace: "root\\LibreHardwareMonitor"

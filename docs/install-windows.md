@@ -1,6 +1,6 @@
 # Windows Install
 
-Windows support currently uses the PowerShell service installer. MSI packaging is still deferred. The Windows exporter emits real baseline OS metrics, optional NVIDIA NVML GPU metrics, and optional CPU/motherboard/storage temperatures when LibreHardwareMonitor exposes its WMI provider.
+Windows support currently uses the PowerShell service installer. MSI packaging is still deferred. The Windows exporter emits real baseline OS metrics, optional NVIDIA NVML GPU metrics, and optional CPU/motherboard/storage temperatures through the LibreHardwareMonitor local HTTP endpoint.
 
 ## Build
 
@@ -20,7 +20,7 @@ Run from Administrator PowerShell:
 .\packaging\windows\install-service.ps1 -BinaryPath .\target\release\telemon-exporter.exe
 ```
 
-The installer creates `C:\ProgramData\Telemon\exporter.yml` from `packaging\windows\config.default.yml` on first install and preserves it on later runs. The default Windows config disables Linux hwmon, enables Windows baseline/inventory collectors, and leaves NVIDIA NVML plus `windows_lhm_wmi` enabled as optional collectors. Missing optional providers are non-fatal.
+The installer creates `C:\ProgramData\Telemon\exporter.yml` from `packaging\windows\config.default.yml` on first install and preserves it on later runs. The default Windows config disables Linux hwmon, enables Windows baseline/inventory collectors, and leaves NVIDIA NVML plus `windows_lhm_http` enabled as optional collectors. Missing optional providers are non-fatal.
 
 To add a source-restricted inbound firewall rule for the Prometheus server:
 
@@ -63,17 +63,15 @@ Keep `LocalService` as the default unless testing shows the host needs broader p
 
 ## Optional CPU Temperatures
 
-Windows CPU/core temperatures require LibreHardwareMonitor to expose its WMI provider. Generic Windows temperature WMI classes are not used as production CPU temperature sources.
+Windows CPU/core temperatures require LibreHardwareMonitor with its Remote Web Server enabled. Generic Windows temperature WMI classes are not used as production CPU temperature sources. The older `windows_lhm_wmi` collector remains experimental and disabled by default because some LibreHardwareMonitor builds do not publish a WMI namespace.
 
-Before expecting Telemon CPU temperatures, validate the provider from Administrator PowerShell:
+Before expecting Telemon CPU temperatures, validate the local LibreHardwareMonitor endpoint from PowerShell:
 
 ```powershell
-Get-CimInstance -Namespace root\LibreHardwareMonitor -ClassName Sensor |
-  Where-Object { $_.SensorType -eq "Temperature" } |
-  Select-Object HardwareType, HardwareName, Name, SensorType, Value
+Invoke-RestMethod http://127.0.0.1:8085/data.json
 ```
 
-If this returns AMD Ryzen package/core rows, Telemon should emit them as `telemon_temperature_celsius{source="windows_lhm_wmi",component="cpu",...}`. If it returns nothing or the namespace is missing, Telemon reports `telemon_collector_supported{collector="windows_lhm_wmi"} 0` and continues running.
+If this returns LibreHardwareMonitor JSON with AMD Ryzen package/core temperature nodes, Telemon should emit them as `telemon_temperature_celsius{source="windows_lhm_http",component="cpu",...}`. If LibreHardwareMonitor is not running or the Remote Web Server is disabled, Telemon reports `telemon_collector_supported{collector="windows_lhm_http"} 0` and continues running.
 
 Installed paths:
 
@@ -95,7 +93,7 @@ Invoke-WebRequest http://<exporter-lan-ip>:9185/metrics
 Invoke-WebRequest http://<exporter-lan-ip>:9185/metrics/static
 ```
 
-Expected Windows MVP metrics include uptime, total CPU usage after the second collection cycle, memory bytes, fixed local filesystem bytes, network byte counters, Windows OS info, CPU info, and computer-system info. NVIDIA GPU metrics appear on Windows machines where `nvml.dll` is available. CPU/motherboard/storage temperatures appear only when LibreHardwareMonitor WMI is available.
+Expected Windows MVP metrics include uptime, total CPU usage after the second collection cycle, memory bytes, fixed local filesystem bytes, network byte counters, Windows OS info, CPU info, and computer-system info. NVIDIA GPU metrics appear on Windows machines where `nvml.dll` is available. CPU/motherboard/storage temperatures appear when LibreHardwareMonitor is running with its Remote Web Server enabled.
 
 For registry enrollment, check the registry from the monitoring server:
 

@@ -108,6 +108,7 @@ pub struct CollectorsConfig {
     pub nvidia_nvml: NvidiaNvmlConfig,
     pub windows_baseline: WindowsBaselineConfig,
     pub windows_inventory: WindowsInventoryConfig,
+    pub windows_lhm_http: WindowsLhmHttpConfig,
     pub windows_lhm_wmi: WindowsLhmWmiConfig,
 }
 
@@ -147,6 +148,18 @@ pub struct WindowsBaselineConfig {
 #[serde(default)]
 pub struct WindowsInventoryConfig {
     pub enabled: bool,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(default)]
+pub struct WindowsLhmHttpConfig {
+    pub enabled: bool,
+    pub url: String,
+    pub timeout_ms: u64,
+    pub include_unknown_sensors: bool,
+    pub sensor_allowlist: Vec<String>,
+    pub sensor_denylist: Vec<String>,
+    pub require_provider: bool,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -276,6 +289,18 @@ impl AppConfig {
 
         if self.collectors.linux_hwmon.root.as_os_str().is_empty() {
             bail!("collectors.linux_hwmon.root must not be empty");
+        }
+        if self.collectors.windows_lhm_http.enabled {
+            if self.collectors.windows_lhm_http.url.trim().is_empty() {
+                bail!("collectors.windows_lhm_http.url must not be empty when enabled");
+            }
+            if !self.collectors.windows_lhm_http.url.starts_with("http://") {
+                bail!("collectors.windows_lhm_http.url must start with http:// when enabled");
+            }
+            validate_positive(
+                self.collectors.windows_lhm_http.timeout_ms,
+                "collectors.windows_lhm_http.timeout_ms",
+            )?;
         }
         if self.collectors.windows_lhm_wmi.enabled
             && self.collectors.windows_lhm_wmi.namespace.trim().is_empty()
@@ -492,10 +517,24 @@ impl Default for WindowsInventoryConfig {
     }
 }
 
-impl Default for WindowsLhmWmiConfig {
+impl Default for WindowsLhmHttpConfig {
     fn default() -> Self {
         Self {
             enabled: default_windows_collector_enabled(),
+            url: "http://127.0.0.1:8085/data.json".to_string(),
+            timeout_ms: 1500,
+            include_unknown_sensors: false,
+            sensor_allowlist: Vec::new(),
+            sensor_denylist: Vec::new(),
+            require_provider: false,
+        }
+    }
+}
+
+impl Default for WindowsLhmWmiConfig {
+    fn default() -> Self {
+        Self {
+            enabled: false,
             namespace: r"root\LibreHardwareMonitor".to_string(),
             include_unknown_sensors: false,
             sensor_allowlist: Vec::new(),
@@ -631,9 +670,15 @@ mod tests {
             cfg!(target_os = "windows")
         );
         assert_eq!(
-            config.collectors.windows_lhm_wmi.enabled,
+            config.collectors.windows_lhm_http.enabled,
             cfg!(target_os = "windows")
         );
+        assert_eq!(
+            config.collectors.windows_lhm_http.url,
+            "http://127.0.0.1:8085/data.json"
+        );
+        assert_eq!(config.collectors.windows_lhm_http.timeout_ms, 1500);
+        assert!(!config.collectors.windows_lhm_wmi.enabled);
         assert_eq!(
             config.collectors.windows_lhm_wmi.namespace,
             r"root\LibreHardwareMonitor"
