@@ -63,3 +63,4 @@ Uninstall:
 ```
 
 The uninstall script removes `Telemon Exporter 9185*` firewall rules and preserves `C:\ProgramData\Telemon\exporter.yml`.
+For full reset and reinstall cleanup commands, see `..\..\docs\uninstall.md`.

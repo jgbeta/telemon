@@ -59,6 +59,7 @@ first GitHub publish. See `docs/github-ghcr.md`.
 
 The current Prometheus metric catalog is documented in
 `docs/prometheus-metrics.md` and `docs/prometheus-metrics.csv`.
+For clean removal and fresh reinstall testing, see `docs/uninstall.md`.
 
 ## Scope
 

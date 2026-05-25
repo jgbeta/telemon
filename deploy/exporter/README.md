@@ -170,3 +170,8 @@ curl http://<exporter-host-ip>:9185/metrics
 curl http://<exporter-host-ip>:9185/metrics/static
 curl http://<server-ip>:9186/prometheus/sd
 ```
+
+## Uninstall
+
+For Docker exporter teardown, config/state reset, and image cleanup commands,
+see `../../docs/uninstall.md`.

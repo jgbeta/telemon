@@ -180,6 +180,11 @@ systemctl status telemon-exporter
 journalctl -u telemon-exporter -n 100
 ```
 
+## Uninstall
+
+For bootstrap, source-script, and Unraid cleanup commands, see
+`uninstall.md`.
+
 ## Reruns
 
 Running `install.sh` again is safe for the bootstrap use case:

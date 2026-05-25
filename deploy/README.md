@@ -258,6 +258,9 @@ OS supports it.
 For Docker exporter details, including Unraid and optional NVIDIA setup, see
 `deploy/exporter/README.md`.
 
+For container teardown, volume deletion, and full reinstall reset steps, see
+`../docs/uninstall.md`.
+
 For side-by-side Unraid native versus Docker validation, or OMV Docker
 validation, use `deploy/exporter/UNRAID_OMV_VALIDATION.md`. That flow runs the
 Docker exporter on port `9187` with the same real host collectors so it can be

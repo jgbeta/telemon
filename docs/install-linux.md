@@ -159,3 +159,6 @@ If the installer created a UFW rule from `TELEMON_PROMETHEUS_IP` or
 `--prometheus-server-ip`, it records the source and port under `/etc/telemon`.
 Uninstall removes only the recorded Telemon-managed rule. Manually-created
 firewall rules must be removed manually.
+
+For purge, full reset, bootstrap uninstall, and Unraid cleanup commands, see
+`uninstall.md`.

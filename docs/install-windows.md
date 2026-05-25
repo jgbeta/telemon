@@ -114,3 +114,4 @@ curl.exe -v --connect-timeout 3 http://<exporter-lan-ip>:9185/metrics
 ```
 
 The uninstall script preserves `C:\ProgramData\Telemon\exporter.yml`. It removes firewall rules named `Telemon Exporter 9185*`.
+For full reset commands, see `uninstall.md`.
