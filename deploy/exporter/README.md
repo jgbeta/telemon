@@ -141,7 +141,7 @@ check the Docker mount first.
 ## NVIDIA
 
 NVIDIA is optional. Non-NVIDIA hosts still run and report the collector as
-unsupported. `telemon_collector_supported{collector="nvidia_nvml"} 0`
+unsupported. `exporter_collector_supported{collector="nvidia_nvml"} 0`
 means NVML is not available to the exporter and is independent of Linux hwmon
 temperature collection.
 

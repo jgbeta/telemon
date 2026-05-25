@@ -159,10 +159,10 @@ curl http://127.0.0.1:9185/metrics/static
 curl http://127.0.0.1:9185/metrics | grep 'source="linux_hwmon"'
 ```
 
-On Unraid, seeing `telemon_temperature_celsius` values with
+On Unraid, seeing `hardware_temperature_celsius` values with
 `source="linux_hwmon"` confirms the host hwmon collector can read CPU, board, or
 storage sensors exposed by the kernel. NVIDIA metrics are separate; if
-`telemon_collector_supported{collector="nvidia_nvml"} 0` appears, NVML is
+`exporter_collector_supported{collector="nvidia_nvml"} 0` appears, NVML is
 not available to the exporter yet.
 
 From the monitoring server:

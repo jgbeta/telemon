@@ -71,7 +71,7 @@ Before expecting Telemon CPU temperatures, validate the local LibreHardwareMonit
 Invoke-RestMethod http://127.0.0.1:8085/data.json
 ```
 
-If this returns LibreHardwareMonitor JSON with AMD Ryzen package/core temperature nodes, Telemon should emit them as `telemon_temperature_celsius{source="windows_lhm_http",component="cpu",...}`. If LibreHardwareMonitor is not running or the Remote Web Server is disabled, Telemon reports `telemon_collector_supported{collector="windows_lhm_http"} 0` and continues running.
+If this returns LibreHardwareMonitor JSON with AMD Ryzen package/core temperature nodes, Telemon should emit them as `hardware_temperature_celsius{source="windows_lhm_http",component="cpu",...}`. If LibreHardwareMonitor is not running or the Remote Web Server is disabled, Telemon reports `exporter_collector_supported{collector="windows_lhm_http"} 0` and continues running.
 
 Installed paths:
 

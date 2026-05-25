@@ -43,7 +43,7 @@
       },
       "targets": [
         {
-          "expr": "telemon_collector_up{collector=\"nvidia_nvml\",user_name=~\"$user_name\",device_name=~\"$device_name\",machine_uuid=~\"$machine_uuid\",os=~\"$os\",device_uuid=~\"$device_uuid\"}",
+          "expr": "exporter_collector_up{collector=\"nvidia_nvml\",user_name=~\"$user_name\",device_name=~\"$device_name\",machine_uuid=~\"$machine_uuid\",os=~\"$os\",device_uuid=~\"$device_uuid\"}",
           "refId": "A"
         }
       ],
@@ -84,7 +84,7 @@
       },
       "targets": [
         {
-          "expr": "telemon_collector_supported{collector=\"nvidia_nvml\",user_name=~\"$user_name\",device_name=~\"$device_name\",machine_uuid=~\"$machine_uuid\",os=~\"$os\",device_uuid=~\"$device_uuid\"}",
+          "expr": "exporter_collector_supported{collector=\"nvidia_nvml\",user_name=~\"$user_name\",device_name=~\"$device_name\",machine_uuid=~\"$machine_uuid\",os=~\"$os\",device_uuid=~\"$device_uuid\"}",
           "refId": "A"
         }
       ],
@@ -114,7 +114,7 @@
       },
       "targets": [
         {
-          "expr": "telemon_gpu_info{source=\"nvidia_nvml\",user_name=~\"$user_name\",device_name=~\"$device_name\",machine_uuid=~\"$machine_uuid\",os=~\"$os\",device_uuid=~\"$device_uuid\"}",
+          "expr": "hardware_device_info{component=\"gpu\",source=\"nvidia_nvml\",user_name=~\"$user_name\",device_name=~\"$device_name\",machine_uuid=~\"$machine_uuid\",os=~\"$os\",device_uuid=~\"$device_uuid\"}",
           "format": "table",
           "instant": true,
           "refId": "A"
@@ -154,7 +154,7 @@
       },
       "targets": [
         {
-          "expr": "telemon_temperature_celsius{component=\"gpu\",source=\"nvidia_nvml\",user_name=~\"$user_name\",device_name=~\"$device_name\",machine_uuid=~\"$machine_uuid\",os=~\"$os\",device_uuid=~\"$device_uuid\"}",
+          "expr": "hardware_temperature_celsius{component=\"gpu\",source=\"nvidia_nvml\",user_name=~\"$user_name\",device_name=~\"$device_name\",machine_uuid=~\"$machine_uuid\",os=~\"$os\",device_uuid=~\"$device_uuid\"}",
           "legendFormat": "{{device_name}} GPU {{gpu_index}}",
           "refId": "A"
         }
@@ -193,7 +193,7 @@
       },
       "targets": [
         {
-          "expr": "telemon_gpu_utilization_ratio{source=\"nvidia_nvml\",user_name=~\"$user_name\",device_name=~\"$device_name\",machine_uuid=~\"$machine_uuid\",os=~\"$os\",device_uuid=~\"$device_uuid\"}",
+          "expr": "hardware_utilization_ratio{component=\"gpu\",source=\"nvidia_nvml\",user_name=~\"$user_name\",device_name=~\"$device_name\",machine_uuid=~\"$machine_uuid\",os=~\"$os\",device_uuid=~\"$device_uuid\"}",
           "legendFormat": "{{device_name}} GPU {{gpu_index}} {{engine}}",
           "refId": "A"
         }
@@ -232,12 +232,12 @@
       },
       "targets": [
         {
-          "expr": "telemon_gpu_memory_used_bytes{source=\"nvidia_nvml\",user_name=~\"$user_name\",device_name=~\"$device_name\",machine_uuid=~\"$machine_uuid\",os=~\"$os\",device_uuid=~\"$device_uuid\"}",
+          "expr": "hardware_memory_bytes{component=\"gpu\",state=\"used\",source=\"nvidia_nvml\",user_name=~\"$user_name\",device_name=~\"$device_name\",machine_uuid=~\"$machine_uuid\",os=~\"$os\",device_uuid=~\"$device_uuid\"}",
           "legendFormat": "{{device_name}} GPU {{gpu_index}} used",
           "refId": "A"
         },
         {
-          "expr": "telemon_gpu_memory_total_bytes{source=\"nvidia_nvml\",user_name=~\"$user_name\",device_name=~\"$device_name\",machine_uuid=~\"$machine_uuid\",os=~\"$os\",device_uuid=~\"$device_uuid\"}",
+          "expr": "hardware_memory_bytes{component=\"gpu\",state=\"total\",source=\"nvidia_nvml\",user_name=~\"$user_name\",device_name=~\"$device_name\",machine_uuid=~\"$machine_uuid\",os=~\"$os\",device_uuid=~\"$device_uuid\"}",
           "legendFormat": "{{device_name}} GPU {{gpu_index}} total",
           "refId": "B"
         }
@@ -276,7 +276,7 @@
       },
       "targets": [
         {
-          "expr": "telemon_fan_speed_ratio{component=\"gpu\",source=\"nvidia_nvml\",user_name=~\"$user_name\",device_name=~\"$device_name\",machine_uuid=~\"$machine_uuid\",os=~\"$os\",device_uuid=~\"$device_uuid\"}",
+          "expr": "hardware_fan_speed_ratio{component=\"gpu\",source=\"nvidia_nvml\",user_name=~\"$user_name\",device_name=~\"$device_name\",machine_uuid=~\"$machine_uuid\",os=~\"$os\",device_uuid=~\"$device_uuid\"}",
           "legendFormat": "{{device_name}} GPU {{gpu_index}}",
           "refId": "A"
         }

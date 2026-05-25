@@ -82,7 +82,7 @@ scrape_configs:
 ```
 
 The full Prometheus config includes `15s`, `10s`, `5s`, and `1s` dynamic jobs.
-Exporters publish `telemon_requested_scrape_interval_seconds`; the registry
+Exporters publish `exporter_requested_scrape_interval_seconds`; the registry
 places each device in the matching service-discovery endpoint. Each dynamic
 scrape still includes all enabled dynamic sensor metrics for that exporter.
 Long-term storage reduction should be handled later with downsampling or
@@ -310,9 +310,9 @@ Then check:
 
 - `Status -> Targets`
 - Query `up{job=~"telemon-(15s|10s|5s|1s)"}`
-- Query `telemon_requested_scrape_interval_seconds`
-- Query `telemon_collector_up`
-- Query `telemon_collector_supported`
+- Query `exporter_requested_scrape_interval_seconds`
+- Query `exporter_collector_up`
+- Query `exporter_collector_supported`
 
 Expected healthy target:
 

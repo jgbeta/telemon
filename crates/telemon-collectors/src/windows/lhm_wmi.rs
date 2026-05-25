@@ -281,6 +281,7 @@ fn missing_provider_status(config: &WindowsLhmWmiConfig) -> &'static str {
 struct TemperatureReading {
     component: Component,
     sensor: String,
+    instance: String,
     value_celsius: f64,
 }
 
@@ -291,7 +292,7 @@ fn temperature_readings(
     let allowlist = normalized_filter_set(&config.sensor_allowlist);
     let denylist = normalized_filter_set(&config.sensor_denylist);
     let mut readings = Vec::new();
-    let mut duplicate_counts: BTreeMap<(String, String), usize> = BTreeMap::new();
+    let mut duplicate_counts: BTreeMap<(String, String, String), usize> = BTreeMap::new();
 
     for sensor in sensors {
         let Some(sensor_type) = sensor.sensor_type.as_deref() else {
@@ -325,21 +326,23 @@ fn temperature_readings(
             continue;
         }
 
+        let sensor_name = canonical_temperature_sensor(component, &normalized_sensor);
+        let mut instance = normalized_sensor;
         let duplicate_key = (
             component.label_value().to_string(),
-            normalized_sensor.clone(),
+            sensor_name.clone(),
+            instance.clone(),
         );
         let count = duplicate_counts.entry(duplicate_key).or_insert(0);
         *count += 1;
-        let sensor = if *count > 1 {
-            format!("{normalized_sensor}_{count}")
-        } else {
-            normalized_sensor
-        };
+        if *count > 1 {
+            instance = format!("{instance}_{count}");
+        }
 
         readings.push(TemperatureReading {
             component,
-            sensor,
+            sensor: sensor_name,
+            instance,
             value_celsius,
         });
     }
@@ -350,14 +353,78 @@ fn temperature_readings(
 fn temperature_metric(reading: &TemperatureReading) -> MetricSample {
     MetricSample::gauge(
         names::TEMPERATURE_CELSIUS,
-        "Temperature reading in degrees Celsius.",
+        "Hardware temperature reading in degrees Celsius.",
         labels(&[
             ("component", reading.component.label_value()),
+            ("device_id", lhm_device_id(reading.component)),
             ("sensor", reading.sensor.as_str()),
+            ("sensor_instance", reading.instance.as_str()),
             ("source", SOURCE),
+            ("source_driver", "librehardwaremonitor"),
         ]),
         reading.value_celsius,
     )
+}
+
+fn canonical_temperature_sensor(component: Component, normalized_sensor: &str) -> String {
+    match component {
+        Component::Cpu => {
+            if normalized_sensor == "package"
+                || normalized_sensor.contains("tctl")
+                || normalized_sensor.contains("tdie")
+            {
+                "cpu_package_temp".to_string()
+            } else if normalized_sensor.starts_with("core") {
+                "cpu_core_temp".to_string()
+            } else {
+                "cpu_temp".to_string()
+            }
+        }
+        Component::Gpu => {
+            if normalized_sensor.contains("hotspot") || normalized_sensor.contains("hot_spot") {
+                "gpu_hotspot_temp".to_string()
+            } else if normalized_sensor.contains("memory") {
+                "gpu_memory_temp".to_string()
+            } else {
+                "gpu_edge_temp".to_string()
+            }
+        }
+        Component::Storage => {
+            if normalized_sensor == "composite" {
+                "storage_composite_temp".to_string()
+            } else {
+                "storage_sensor_temp".to_string()
+            }
+        }
+        Component::Motherboard => {
+            if normalized_sensor.contains("vrm") {
+                "vrm_temp".to_string()
+            } else {
+                "motherboard_temp".to_string()
+            }
+        }
+        Component::Memory => "memory_temp".to_string(),
+        Component::Network => "network_temp".to_string(),
+        Component::Cooling => "cooling_temp".to_string(),
+        Component::System => "system_temp".to_string(),
+        Component::Battery => "battery_temp".to_string(),
+        Component::Unknown => normalized_sensor.to_string(),
+    }
+}
+
+fn lhm_device_id(component: Component) -> &'static str {
+    match component {
+        Component::Cpu => "cpu0",
+        Component::Gpu => "gpu0",
+        Component::Storage => "storage",
+        Component::Motherboard => "board",
+        Component::Memory => "memory",
+        Component::Network => "network",
+        Component::Cooling => "cooling",
+        Component::System => "system",
+        Component::Battery => "battery",
+        Component::Unknown => "unknown",
+    }
 }
 
 fn map_component(hardware_type: Option<&str>, hardware_name: Option<&str>) -> Component {
@@ -385,10 +452,23 @@ fn map_component(hardware_type: Option<&str>, hardware_name: Option<&str>) -> Co
     } else if combined.contains("motherboard")
         || combined.contains("superio")
         || combined.contains("mainboard")
+        || combined.contains("asus")
+        || combined.contains("vrm")
     {
         Component::Motherboard
+    } else if combined.contains("memory") || combined.contains("ram") {
+        Component::Memory
+    } else if combined.contains("network")
+        || combined.contains("ethernet")
+        || combined.contains("wifi")
+    {
+        Component::Network
+    } else if combined.contains("fan") || combined.contains("pump") || combined.contains("cooler") {
+        Component::Cooling
     } else if combined.contains("battery") {
         Component::Battery
+    } else if combined.contains("acpi") || combined.contains("thermal zone") {
+        Component::System
     } else {
         Component::Unknown
     }
@@ -636,7 +716,7 @@ mod tests {
         let result = collector.collect();
 
         assert!(result.success);
-        assert_eq!(metric_value(&result, "package"), 67.0);
+        assert_eq!(metric_value(&result, "cpu_package_temp"), 67.0);
         assert!(result.metrics.iter().any(|metric| {
             metric.name == names::TEMPERATURE_CELSIUS
                 && metric.labels.get("component").map(String::as_str) == Some("cpu")
@@ -663,10 +743,12 @@ mod tests {
             ],
         );
 
-        assert_eq!(readings[0].sensor, "core_1");
-        assert_eq!(readings[1].sensor, "core_1_2");
-        assert_eq!(readings[2].sensor, "core");
-        assert_eq!(readings[3].sensor, "temp1");
+        assert_eq!(readings[0].sensor, "cpu_core_temp");
+        assert_eq!(readings[0].instance, "core_1");
+        assert_eq!(readings[1].sensor, "cpu_core_temp");
+        assert_eq!(readings[1].instance, "core_1_2");
+        assert_eq!(readings[2].sensor, "gpu_edge_temp");
+        assert_eq!(readings[3].sensor, "motherboard_temp");
     }
 
     #[test]
@@ -703,7 +785,7 @@ mod tests {
         );
 
         assert_eq!(readings.len(), 1);
-        assert_eq!(readings[0].sensor, "package");
+        assert_eq!(readings[0].sensor, "cpu_package_temp");
     }
 
     #[test]
@@ -720,7 +802,8 @@ mod tests {
         );
 
         assert_eq!(readings.len(), 1);
-        assert_eq!(readings[0].sensor, "core_1");
+        assert_eq!(readings[0].sensor, "cpu_core_temp");
+        assert_eq!(readings[0].instance, "core_1");
     }
 
     #[test]

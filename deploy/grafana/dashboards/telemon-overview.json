@@ -73,13 +73,13 @@
       },
       "targets": [
         {
-          "expr": "telemon_collector_up{user_name=~\"$user_name\",device_name=~\"$device_name\",machine_uuid=~\"$machine_uuid\",os=~\"$os\",device_uuid=~\"$device_uuid\"}",
+          "expr": "exporter_collector_up{user_name=~\"$user_name\",device_name=~\"$device_name\",machine_uuid=~\"$machine_uuid\",os=~\"$os\",device_uuid=~\"$device_uuid\"}",
           "format": "table",
           "instant": true,
           "refId": "A"
         },
         {
-          "expr": "telemon_collector_supported{user_name=~\"$user_name\",device_name=~\"$device_name\",machine_uuid=~\"$machine_uuid\",os=~\"$os\",device_uuid=~\"$device_uuid\"}",
+          "expr": "exporter_collector_supported{user_name=~\"$user_name\",device_name=~\"$device_name\",machine_uuid=~\"$machine_uuid\",os=~\"$os\",device_uuid=~\"$device_uuid\"}",
           "format": "table",
           "instant": true,
           "refId": "B"
@@ -111,7 +111,7 @@
       },
       "targets": [
         {
-          "expr": "telemon_build_info{user_name=~\"$user_name\",device_name=~\"$device_name\",machine_uuid=~\"$machine_uuid\",os=~\"$os\",device_uuid=~\"$device_uuid\"}",
+          "expr": "exporter_build_info{user_name=~\"$user_name\",device_name=~\"$device_name\",machine_uuid=~\"$machine_uuid\",os=~\"$os\",device_uuid=~\"$device_uuid\"}",
           "format": "table",
           "instant": true,
           "refId": "A"
@@ -151,7 +151,7 @@
       },
       "targets": [
         {
-          "expr": "max by (device_name, user_name, device_uuid, instance, host, os) (telemon_temperature_celsius{user_name=~\"$user_name\",device_name=~\"$device_name\",machine_uuid=~\"$machine_uuid\",os=~\"$os\",device_uuid=~\"$device_uuid\"})",
+          "expr": "max by (device_name, user_name, device_uuid, instance, host, os) (hardware_temperature_celsius{user_name=~\"$user_name\",device_name=~\"$device_name\",machine_uuid=~\"$machine_uuid\",os=~\"$os\",device_uuid=~\"$device_uuid\"})",
           "refId": "A"
         }
       ],

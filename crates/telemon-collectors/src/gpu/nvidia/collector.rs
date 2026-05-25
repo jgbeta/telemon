@@ -534,10 +534,14 @@ fn record_partial_error(
 
 fn gpu_info_metric(config: &NvidiaNvmlConfig, info: &NvidiaDeviceInfo) -> MetricSample {
     let gpu_index = info.index.to_string();
+    let device_id = gpu_device_id(info.index);
     let mut metric_labels = labels(&[
+        ("component", "gpu"),
+        ("device_id", device_id.as_str()),
         ("gpu_index", gpu_index.as_str()),
         ("vendor", "nvidia"),
         ("source", SOURCE),
+        ("source_driver", "nvml"),
     ]);
 
     if config.expose_gpu_name {
@@ -553,22 +557,30 @@ fn gpu_info_metric(config: &NvidiaNvmlConfig, info: &NvidiaDeviceInfo) -> Metric
 
     MetricSample::gauge(
         names::GPU_INFO,
-        "NVIDIA GPU identity information.",
+        "Hardware device identity information.",
         metric_labels,
         1.0,
     )
 }
 
+fn gpu_device_id(index: u32) -> String {
+    format!("gpu{index}")
+}
+
 fn gpu_temperature_metric(index: u32, temperature: f64) -> MetricSample {
     let gpu_index = index.to_string();
+    let device_id = gpu_device_id(index);
     MetricSample::gauge(
         names::TEMPERATURE_CELSIUS,
-        "Temperature reading in degrees Celsius.",
+        "Hardware temperature reading in degrees Celsius.",
         labels(&[
             ("component", "gpu"),
-            ("sensor", "core"),
-            ("source", SOURCE),
+            ("device_id", device_id.as_str()),
             ("gpu_index", gpu_index.as_str()),
+            ("sensor", "gpu_edge_temp"),
+            ("sensor_instance", "core"),
+            ("source", SOURCE),
+            ("source_driver", "nvml"),
         ]),
         temperature,
     )
@@ -583,73 +595,113 @@ fn gpu_utilization_metrics(index: u32, utilization: NvidiaUtilization) -> Vec<Me
 
 fn gpu_utilization_metric(index: u32, engine: &str, value: f64) -> MetricSample {
     let gpu_index = index.to_string();
+    let device_id = gpu_device_id(index);
+    let sensor = if engine == "memory" {
+        "gpu_memory_utilization"
+    } else {
+        "gpu_utilization"
+    };
     MetricSample::gauge(
         names::GPU_UTILIZATION_RATIO,
-        "NVIDIA GPU utilization as a ratio from 0 to 1.",
+        "Hardware utilization as a ratio from 0 to 1.",
         labels(&[
+            ("component", "gpu"),
+            ("device_id", device_id.as_str()),
             ("gpu_index", gpu_index.as_str()),
-            ("source", SOURCE),
+            ("sensor", sensor),
             ("engine", engine),
+            ("source", SOURCE),
+            ("source_driver", "nvml"),
         ]),
         value,
     )
 }
 
 fn gpu_memory_metrics(index: u32, memory: NvidiaMemory) -> Vec<MetricSample> {
-    let gpu_index = index.to_string();
-    let metric_labels = labels(&[("gpu_index", gpu_index.as_str()), ("source", SOURCE)]);
-
     vec![
-        MetricSample::gauge(
-            names::GPU_MEMORY_TOTAL_BYTES,
-            "NVIDIA GPU total memory in bytes.",
-            metric_labels.clone(),
-            memory.total_bytes as f64,
-        ),
-        MetricSample::gauge(
-            names::GPU_MEMORY_USED_BYTES,
-            "NVIDIA GPU used memory in bytes.",
-            metric_labels.clone(),
-            memory.used_bytes as f64,
-        ),
-        MetricSample::gauge(
-            names::GPU_MEMORY_FREE_BYTES,
-            "NVIDIA GPU free memory in bytes.",
-            metric_labels,
-            memory.free_bytes as f64,
-        ),
+        gpu_memory_metric(index, "total", memory.total_bytes),
+        gpu_memory_metric(index, "used", memory.used_bytes),
+        gpu_memory_metric(index, "free", memory.free_bytes),
     ]
+}
+
+fn gpu_memory_metric(index: u32, state: &str, value: u64) -> MetricSample {
+    let gpu_index = index.to_string();
+    let device_id = gpu_device_id(index);
+    MetricSample::gauge(
+        names::GPU_MEMORY_TOTAL_BYTES,
+        "Hardware memory bytes by state.",
+        labels(&[
+            ("component", "gpu"),
+            ("device_id", device_id.as_str()),
+            ("gpu_index", gpu_index.as_str()),
+            ("memory", "vram"),
+            ("state", state),
+            ("source", SOURCE),
+            ("source_driver", "nvml"),
+        ]),
+        value as f64,
+    )
 }
 
 fn gpu_power_usage_metric(index: u32, milliwatts: u32) -> MetricSample {
     let gpu_index = index.to_string();
+    let device_id = gpu_device_id(index);
     MetricSample::gauge(
         names::GPU_POWER_USAGE_WATTS,
-        "NVIDIA GPU power usage in watts.",
-        labels(&[("gpu_index", gpu_index.as_str()), ("source", SOURCE)]),
+        "Hardware power in watts.",
+        labels(&[
+            ("component", "gpu"),
+            ("device_id", device_id.as_str()),
+            ("gpu_index", gpu_index.as_str()),
+            ("sensor", "gpu_power"),
+            ("sensor_instance", "current"),
+            ("source", SOURCE),
+            ("source_driver", "nvml"),
+        ]),
         milliwatts as f64 / 1_000.0,
     )
 }
 
 fn gpu_power_limit_metric(index: u32, milliwatts: u32) -> MetricSample {
     let gpu_index = index.to_string();
+    let device_id = gpu_device_id(index);
     MetricSample::gauge(
         names::GPU_POWER_LIMIT_WATTS,
-        "NVIDIA GPU enforced power limit in watts.",
-        labels(&[("gpu_index", gpu_index.as_str()), ("source", SOURCE)]),
+        "Hardware power limit in watts.",
+        labels(&[
+            ("component", "gpu"),
+            ("device_id", device_id.as_str()),
+            ("gpu_index", gpu_index.as_str()),
+            ("sensor", "gpu_power_limit"),
+            ("limit", "current"),
+            ("source", SOURCE),
+            ("source_driver", "nvml"),
+        ]),
         milliwatts as f64 / 1_000.0,
     )
 }
 
 fn gpu_clock_metric(index: u32, clock: &str, mhz: u32) -> MetricSample {
     let gpu_index = index.to_string();
+    let device_id = gpu_device_id(index);
+    let sensor = match clock {
+        "memory" => "gpu_memory_clock",
+        "sm" => "gpu_sm_clock",
+        "video" => "gpu_video_clock",
+        _ => "gpu_core_clock",
+    };
     MetricSample::gauge(
         names::GPU_CLOCK_HERTZ,
-        "NVIDIA GPU clock speed in hertz.",
+        "Hardware clock speed in hertz.",
         labels(&[
+            ("component", "gpu"),
+            ("device_id", device_id.as_str()),
             ("gpu_index", gpu_index.as_str()),
-            ("source", SOURCE),
+            ("sensor", sensor),
             ("clock", clock),
+            ("source", SOURCE),
+            ("source_driver", "nvml"),
         ]),
         mhz as f64 * 1_000_000.0,
     )
@@ -657,23 +709,37 @@ fn gpu_clock_metric(index: u32, clock: &str, mhz: u32) -> MetricSample {
 
 fn gpu_performance_state_metric(index: u32, state: u32) -> MetricSample {
     let gpu_index = index.to_string();
+    let device_id = gpu_device_id(index);
     MetricSample::gauge(
         names::GPU_PERFORMANCE_STATE,
-        "NVIDIA GPU performance state number where P0 is 0.",
-        labels(&[("gpu_index", gpu_index.as_str()), ("source", SOURCE)]),
+        "Hardware numeric state value.",
+        labels(&[
+            ("component", "gpu"),
+            ("device_id", device_id.as_str()),
+            ("gpu_index", gpu_index.as_str()),
+            ("sensor", "gpu_pstate"),
+            ("state", "pstate"),
+            ("source", SOURCE),
+            ("source_driver", "nvml"),
+        ]),
         state as f64,
     )
 }
 
 fn gpu_fan_speed_metric(index: u32, fan_speed: f64) -> MetricSample {
     let gpu_index = index.to_string();
+    let device_id = gpu_device_id(index);
     MetricSample::gauge(
         names::FAN_SPEED_RATIO,
-        "Fan speed as a ratio from 0 to 1.",
+        "Hardware fan speed as a ratio from 0 to 1.",
         labels(&[
             ("component", "gpu"),
+            ("device_id", device_id.as_str()),
             ("gpu_index", gpu_index.as_str()),
+            ("sensor", "gpu_fan_percent"),
+            ("sensor_instance", "fan"),
             ("source", SOURCE),
+            ("source_driver", "nvml"),
         ]),
         fan_speed,
     )
@@ -788,7 +854,11 @@ mod tests {
             Some(0.31)
         );
         assert_eq!(
-            metric_value(&result, names::GPU_MEMORY_USED_BYTES, ("gpu_index", "0")),
+            metric_value_with_labels(
+                &result,
+                names::GPU_MEMORY_USED_BYTES,
+                &[("gpu_index", "0"), ("state", "used")]
+            ),
             Some(2.0 * 1024.0 * 1024.0 * 1024.0)
         );
         assert_eq!(

@@ -227,21 +227,36 @@ fn split_static_metrics(metrics: Vec<MetricSample>) -> (Vec<MetricSample>, Vec<M
 }
 
 fn is_static_metric(metric: &MetricSample) -> bool {
-    matches!(
-        metric.name.as_str(),
-        telemon_core::metrics::names::COLLECTOR_SUPPORTED
-            | telemon_core::metrics::names::CPU_INFO
-            | telemon_core::metrics::names::COMPUTER_SYSTEM_INFO
-            | telemon_core::metrics::names::FILESYSTEM_SIZE_BYTES
-            | telemon_core::metrics::names::GPU_INFO
-            | telemon_core::metrics::names::GPU_MEMORY_TOTAL_BYTES
-            | telemon_core::metrics::names::GPU_POWER_LIMIT_WATTS
-            | telemon_core::metrics::names::STORAGE_DEVICE_INFO
-            | telemon_core::metrics::names::MEMORY_TOTAL_BYTES
-            | telemon_core::metrics::names::STORAGE_NAMESPACE_CAPACITY_BYTES
-            | telemon_core::metrics::names::TEMPERATURE_LIMIT_CELSIUS
-            | telemon_core::metrics::names::WINDOWS_OS_INFO
-    )
+    use telemon_core::metrics::names;
+
+    let name = metric.name.as_str();
+    if name == names::COLLECTOR_SUPPORTED
+        || name == names::CPU_INFO
+        || name == names::COMPUTER_SYSTEM_INFO
+        || name == names::GPU_INFO
+        || name == names::GPU_POWER_LIMIT_WATTS
+        || name == names::HARDWARE_SENSOR_INFO
+        || name == names::STORAGE_DEVICE_INFO
+        || name == names::STORAGE_NAMESPACE_CAPACITY_BYTES
+        || name == names::TEMPERATURE_LIMIT_CELSIUS
+        || name == names::WINDOWS_OS_INFO
+    {
+        return true;
+    }
+
+    if name == names::MEMORY_TOTAL_BYTES {
+        return metric.labels.get("state").map(String::as_str) == Some("total");
+    }
+
+    if name == names::FILESYSTEM_SIZE_BYTES {
+        return metric.labels.get("state").map(String::as_str) == Some("size");
+    }
+
+    if name == names::GPU_MEMORY_TOTAL_BYTES {
+        return metric.labels.get("state").map(String::as_str) == Some("total");
+    }
+
+    false
 }
 
 fn requested_interval_seconds(
@@ -343,25 +358,25 @@ mod tests {
         let memory_total = MetricSample::gauge(
             telemon_core::metrics::names::MEMORY_TOTAL_BYTES,
             "memory total",
-            telemon_core::metrics::model::labels(&[]),
+            telemon_core::metrics::model::labels(&[("state", "total")]),
             16.0,
         );
         let memory_available = MetricSample::gauge(
             telemon_core::metrics::names::MEMORY_AVAILABLE_BYTES,
             "memory available",
-            telemon_core::metrics::model::labels(&[]),
+            telemon_core::metrics::model::labels(&[("state", "available")]),
             6.0,
         );
         let filesystem_size = MetricSample::gauge(
             telemon_core::metrics::names::FILESYSTEM_SIZE_BYTES,
             "filesystem size",
-            telemon_core::metrics::model::labels(&[]),
+            telemon_core::metrics::model::labels(&[("state", "size")]),
             512.0,
         );
         let filesystem_free = MetricSample::gauge(
             telemon_core::metrics::names::FILESYSTEM_FREE_BYTES,
             "filesystem free",
-            telemon_core::metrics::model::labels(&[]),
+            telemon_core::metrics::model::labels(&[("state", "free")]),
             128.0,
         );
 

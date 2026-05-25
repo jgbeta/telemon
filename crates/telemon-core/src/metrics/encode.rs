@@ -77,30 +77,30 @@ mod tests {
 
     #[test]
     fn encodes_metric_without_labels() {
-        let sample = MetricSample::gauge("telemon_test_gauge", "A test gauge.", labels(&[]), 1.0);
+        let sample = MetricSample::gauge("exporter_test_gauge", "A test gauge.", labels(&[]), 1.0);
 
         assert_eq!(
             encode(&[sample]),
-            "# HELP telemon_test_gauge A test gauge.\n# TYPE telemon_test_gauge gauge\ntelemon_test_gauge 1\n"
+            "# HELP exporter_test_gauge A test gauge.\n# TYPE exporter_test_gauge gauge\nexporter_test_gauge 1\n"
         );
     }
 
     #[test]
     fn encodes_metric_with_labels() {
         let sample = MetricSample::counter(
-            "telemon_test_total",
+            "exporter_test_total",
             "A test counter.",
             labels(&[("collector", "example")]),
             2.0,
         );
 
-        assert!(encode(&[sample]).contains("telemon_test_total{collector=\"example\"} 2\n"));
+        assert!(encode(&[sample]).contains("exporter_test_total{collector=\"example\"} 2\n"));
     }
 
     #[test]
     fn escapes_label_values() {
         let sample = MetricSample::gauge(
-            "telemon_test_gauge",
+            "exporter_test_gauge",
             "A test gauge.",
             labels(&[("value", "a\\b\"c\nd")]),
             1.0,
@@ -111,8 +111,8 @@ mod tests {
 
     #[test]
     fn output_is_deterministic() {
-        let first = MetricSample::gauge("telemon_b", "B.", labels(&[]), 1.0);
-        let second = MetricSample::gauge("telemon_a", "A.", labels(&[]), 1.0);
+        let first = MetricSample::gauge("exporter_b", "B.", labels(&[]), 1.0);
+        let second = MetricSample::gauge("exporter_a", "A.", labels(&[]), 1.0);
 
         assert_eq!(
             encode(&[first.clone(), second.clone()]),

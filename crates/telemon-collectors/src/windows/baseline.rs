@@ -200,25 +200,23 @@ struct MemoryStatus {
 #[cfg(any(target_os = "windows", test))]
 fn memory_metrics(memory: MemoryStatus) -> Vec<MetricSample> {
     let used = memory.total_bytes.saturating_sub(memory.available_bytes);
-    let metric_labels = labels(&[("source", SOURCE)]);
-
     vec![
         MetricSample::gauge(
             names::MEMORY_TOTAL_BYTES,
-            "Total physical memory in bytes.",
-            metric_labels.clone(),
+            "Physical memory in bytes by state.",
+            labels(&[("source", SOURCE), ("state", "total")]),
             memory.total_bytes as f64,
         ),
         MetricSample::gauge(
             names::MEMORY_AVAILABLE_BYTES,
-            "Available physical memory in bytes.",
-            metric_labels.clone(),
+            "Physical memory in bytes by state.",
+            labels(&[("source", SOURCE), ("state", "available")]),
             memory.available_bytes as f64,
         ),
         MetricSample::gauge(
             names::MEMORY_USED_BYTES,
-            "Used physical memory in bytes.",
-            metric_labels,
+            "Physical memory in bytes by state.",
+            labels(&[("source", SOURCE), ("state", "used")]),
             used as f64,
         ),
     ]
@@ -236,32 +234,48 @@ struct FilesystemStatus {
 
 #[cfg(target_os = "windows")]
 fn filesystem_status_to_metrics(filesystem: &FilesystemStatus) -> Vec<MetricSample> {
-    let metric_labels = labels(&[
+    let base_labels = labels(&[
         ("source", SOURCE),
         ("volume", filesystem.volume.as_str()),
         ("drive_type", filesystem.drive_type),
     ]);
 
     vec![
-        MetricSample::gauge(
+        filesystem_bytes_metric(
             names::FILESYSTEM_SIZE_BYTES,
-            "Filesystem size in bytes.",
-            metric_labels.clone(),
-            filesystem.size_bytes as f64,
+            base_labels.clone(),
+            "size",
+            filesystem.size_bytes,
         ),
-        MetricSample::gauge(
+        filesystem_bytes_metric(
             names::FILESYSTEM_FREE_BYTES,
-            "Filesystem free bytes.",
-            metric_labels.clone(),
-            filesystem.free_bytes as f64,
+            base_labels.clone(),
+            "free",
+            filesystem.free_bytes,
         ),
-        MetricSample::gauge(
+        filesystem_bytes_metric(
             names::FILESYSTEM_AVAILABLE_BYTES,
-            "Filesystem bytes available to the exporter process.",
-            metric_labels,
-            filesystem.available_bytes as f64,
+            base_labels,
+            "available",
+            filesystem.available_bytes,
         ),
     ]
+}
+
+#[cfg(target_os = "windows")]
+fn filesystem_bytes_metric(
+    name: &str,
+    mut metric_labels: std::collections::BTreeMap<String, String>,
+    state: &str,
+    value: u64,
+) -> MetricSample {
+    metric_labels.insert("state".to_string(), state.to_string());
+    MetricSample::gauge(
+        name,
+        "Filesystem bytes by state.",
+        metric_labels,
+        value as f64,
+    )
 }
 
 #[cfg(target_os = "windows")]
@@ -283,19 +297,35 @@ fn network_status_to_metrics(network: &NetworkStatus) -> Vec<MetricSample> {
     ]);
 
     vec![
-        MetricSample::counter(
+        network_bytes_metric(
             names::NETWORK_RECEIVE_BYTES_TOTAL,
-            "Total network bytes received by an interface.",
             metric_labels.clone(),
-            network.receive_bytes as f64,
+            "receive",
+            network.receive_bytes,
         ),
-        MetricSample::counter(
+        network_bytes_metric(
             names::NETWORK_TRANSMIT_BYTES_TOTAL,
-            "Total network bytes transmitted by an interface.",
             metric_labels,
-            network.transmit_bytes as f64,
+            "transmit",
+            network.transmit_bytes,
         ),
     ]
+}
+
+#[cfg(target_os = "windows")]
+fn network_bytes_metric(
+    name: &str,
+    mut metric_labels: std::collections::BTreeMap<String, String>,
+    direction: &str,
+    value: u64,
+) -> MetricSample {
+    metric_labels.insert("direction".to_string(), direction.to_string());
+    MetricSample::counter(
+        name,
+        "Total network bytes by direction.",
+        metric_labels,
+        value as f64,
+    )
 }
 
 #[cfg(any(target_os = "windows", test))]
@@ -539,16 +569,18 @@ fn wide_array_to_string(values: &[u16]) -> String {
 mod tests {
     use super::*;
 
-    fn metric_value(metrics: &[MetricSample], name: &str, label: (&str, &str)) -> Option<f64> {
+    fn metric_value(metrics: &[MetricSample], name: &str, labels: &[(&str, &str)]) -> Option<f64> {
         metrics
             .iter()
             .find(|metric| {
                 metric.name == name
-                    && metric
-                        .labels
-                        .get(label.0)
-                        .map(|actual| actual == label.1)
-                        .unwrap_or(false)
+                    && labels.iter().all(|label| {
+                        metric
+                            .labels
+                            .get(label.0)
+                            .map(|actual| actual == label.1)
+                            .unwrap_or(false)
+                    })
             })
             .map(|metric| metric.value)
     }
@@ -562,15 +594,27 @@ mod tests {
         });
 
         assert_eq!(
-            metric_value(&metrics, names::MEMORY_TOTAL_BYTES, ("source", SOURCE)),
+            metric_value(
+                &metrics,
+                names::MEMORY_TOTAL_BYTES,
+                &[("source", SOURCE), ("state", "total")]
+            ),
             Some(16.0)
         );
         assert_eq!(
-            metric_value(&metrics, names::MEMORY_AVAILABLE_BYTES, ("source", SOURCE)),
+            metric_value(
+                &metrics,
+                names::MEMORY_AVAILABLE_BYTES,
+                &[("source", SOURCE), ("state", "available")]
+            ),
             Some(6.0)
         );
         assert_eq!(
-            metric_value(&metrics, names::MEMORY_USED_BYTES, ("source", SOURCE)),
+            metric_value(
+                &metrics,
+                names::MEMORY_USED_BYTES,
+                &[("source", SOURCE), ("state", "used")]
+            ),
             Some(10.0)
         );
     }
@@ -603,7 +647,7 @@ mod tests {
             metric_value(
                 &result.metrics,
                 names::COLLECTOR_SUPPORTED,
-                ("collector", COLLECTOR_NAME)
+                &[("collector", COLLECTOR_NAME)]
             ),
             Some(0.0)
         );
@@ -611,7 +655,7 @@ mod tests {
             metric_value(
                 &result.metrics,
                 names::COLLECTOR_UP,
-                ("collector", COLLECTOR_NAME)
+                &[("collector", COLLECTOR_NAME)]
             ),
             Some(0.0)
         );

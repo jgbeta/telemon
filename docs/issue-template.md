@@ -76,7 +76,7 @@ If the issue involves `nvidia_nvml`, include:
 - GPU model, if visible:
 - `collectors.nvidia_nvml` config:
 - `cargo run -p telemon-cli -- exporter discover --config config.example.yml` output:
-- Relevant `/metrics` lines containing `nvidia_nvml`, `telemon_gpu`, or `component="gpu"`:
+- Relevant `/metrics` lines containing `nvidia_nvml`, `hardware_device_info`, or `component="gpu"`:
 
 Do not include GPU UUIDs unless the issue specifically requires them.
 

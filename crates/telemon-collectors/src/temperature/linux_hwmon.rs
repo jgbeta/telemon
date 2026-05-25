@@ -81,7 +81,7 @@ pub struct LinuxHwmonTemperatureInspection {
     pub raw_label: Option<String>,
     pub normalized_sensor: String,
     #[serde(skip_serializing_if = "Option::is_none")]
-    pub telemon_sensor: Option<String>,
+    pub emitted_sensor: Option<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub critical_celsius: Option<f64>,
     #[serde(skip_serializing_if = "Option::is_none")]
@@ -134,6 +134,7 @@ pub struct LinuxHwmonNvmeNamespaceInspection {
 struct LinuxHwmonScan {
     readings: Vec<TemperatureReading>,
     nvme_devices: Vec<LinuxHwmonNvmeInspection>,
+    extra_metrics: Vec<MetricSample>,
     discovery: LinuxHwmonDiscovery,
 }
 
@@ -200,6 +201,7 @@ impl Collector for LinuxHwmonCollector {
                 for nvme in &scan.nvme_devices {
                     metrics.extend(nvme_to_metrics(nvme, &self.config));
                 }
+                metrics.extend(scan.extra_metrics);
                 for reading in scan.readings {
                     metrics.extend(reading_to_metrics(&reading));
                 }
@@ -303,6 +305,7 @@ fn discover_scan(config: &LinuxHwmonConfig) -> Result<LinuxHwmonScan> {
         return Ok(LinuxHwmonScan {
             readings: Vec::new(),
             nvme_devices: Vec::new(),
+            extra_metrics: Vec::new(),
             discovery,
         });
     }
@@ -311,6 +314,7 @@ fn discover_scan(config: &LinuxHwmonConfig) -> Result<LinuxHwmonScan> {
     let denylist = normalized_filter_set(&config.sensor_denylist);
     let mut readings = Vec::new();
     let mut nvme_devices = Vec::new();
+    let mut extra_metrics = Vec::new();
     let mut hwmon_dirs = fs::read_dir(&config.root)
         .with_context(|| format!("failed to read hwmon root {}", config.root.display()))?
         .filter_map(|entry| entry.ok())
@@ -344,12 +348,14 @@ fn discover_scan(config: &LinuxHwmonConfig) -> Result<LinuxHwmonScan> {
 
         readings.extend(read_hwmon_dir(
             &path,
+            &chip_name,
             component,
             &allowlist,
             &denylist,
             nvme.as_ref(),
             config,
         )?);
+        extra_metrics.extend(read_hwmon_fan_metrics(&path, &chip_name, component)?);
         if let Some(nvme) = nvme {
             nvme_devices.push(nvme);
         }
@@ -361,6 +367,7 @@ fn discover_scan(config: &LinuxHwmonConfig) -> Result<LinuxHwmonScan> {
     Ok(LinuxHwmonScan {
         readings,
         nvme_devices,
+        extra_metrics,
         discovery,
     })
 }
@@ -449,7 +456,7 @@ fn inspect_hwmon_temperatures(
             celsius,
             raw_label,
             normalized_sensor,
-            telemon_sensor: None,
+            emitted_sensor: None,
             critical_celsius,
             warning_celsius,
             emitted: skip_reason.is_none(),
@@ -542,7 +549,7 @@ fn disambiguate_inspection_sensors(chips: &mut [LinuxHwmonChipInspection]) {
             let total = totals.get(&key).copied().unwrap_or_default();
             let index = seen.entry(key).or_default();
             *index += 1;
-            temperature.telemon_sensor = if total > 1 && *index > 1 {
+            temperature.emitted_sensor = if total > 1 && *index > 1 {
                 Some(format!("{}_{}", temperature.normalized_sensor, *index))
             } else {
                 Some(temperature.normalized_sensor.clone())
@@ -553,6 +560,7 @@ fn disambiguate_inspection_sensors(chips: &mut [LinuxHwmonChipInspection]) {
 
 fn read_hwmon_dir(
     path: &Path,
+    chip_name: &str,
     component: Component,
     allowlist: &BTreeSet<String>,
     denylist: &BTreeSet<String>,
@@ -586,61 +594,288 @@ fn read_hwmon_dir(
 
         let raw_label = read_optional_trimmed(path.join(format!("temp{index}_label")))
             .filter(|value| !value.is_empty());
-        let sensor = normalize_sensor_label(
+        let normalized_sensor = normalize_sensor_label(
             raw_label
                 .as_deref()
                 .unwrap_or_else(|| file_name.trim_end_matches("_input")),
         );
 
-        if !allowlist.is_empty() && !allowlist.contains(&sensor) {
+        if !allowlist.is_empty() && !allowlist.contains(&normalized_sensor) {
             continue;
         }
-        if denylist.contains(&sensor) {
+        if denylist.contains(&normalized_sensor) {
             continue;
         }
+
+        let temperature_celsius = milli_celsius_to_celsius(raw_temperature);
+        if !valid_temperature_for_chip(chip_name, &normalized_sensor, temperature_celsius) {
+            continue;
+        }
+
+        let mapping = temperature_mapping(chip_name, raw_label.as_deref(), &normalized_sensor);
+        let mut reading_labels = labels.clone();
+        enrich_hardware_labels(
+            &mut reading_labels,
+            component,
+            chip_name,
+            nvme,
+            &mapping.instance,
+        );
 
         let critical_celsius = read_optional_celsius(path.join(format!("temp{index}_crit")))?;
         let warning_celsius = read_optional_celsius(path.join(format!("temp{index}_max")))?;
 
         readings.push(TemperatureReading {
             component,
-            sensor,
+            sensor: mapping.sensor,
             source: SOURCE,
-            labels: labels.clone(),
-            temperature_celsius: milli_celsius_to_celsius(raw_temperature),
+            labels: reading_labels,
+            temperature_celsius,
             critical_celsius,
             warning_celsius,
             raw_label,
+            raw_channel: Some(format!("temp{index}_input")),
+            confidence: mapping.confidence,
         });
     }
 
     Ok(readings)
 }
 
+#[derive(Debug, Clone, PartialEq)]
+struct TemperatureMapping {
+    sensor: String,
+    instance: String,
+    confidence: f64,
+}
+
+fn temperature_mapping(
+    chip_name: &str,
+    raw_label: Option<&str>,
+    normalized_sensor: &str,
+) -> TemperatureMapping {
+    let chip = chip_name.trim().to_ascii_lowercase();
+    let raw = raw_label.unwrap_or(normalized_sensor).to_ascii_lowercase();
+
+    let (sensor, instance, confidence) = match chip.as_str() {
+        "coretemp" => {
+            if normalized_sensor == "package" {
+                ("cpu_package_temp", "package", 0.99)
+            } else if normalized_sensor.starts_with("core_") {
+                ("cpu_core_temp", normalized_sensor, 0.99)
+            } else {
+                ("cpu_temp", normalized_sensor, 0.85)
+            }
+        }
+        "k10temp" | "zenpower" => {
+            if normalized_sensor == "tctl"
+                || normalized_sensor == "tdie"
+                || normalized_sensor == "package"
+            {
+                ("cpu_package_temp", normalized_sensor, 0.95)
+            } else if normalized_sensor.starts_with("ccd") {
+                ("cpu_die_temp", normalized_sensor, 0.9)
+            } else {
+                ("cpu_temp", normalized_sensor, 0.8)
+            }
+        }
+        "nvme" => {
+            if normalized_sensor == "composite" {
+                ("nvme_composite_temp", "composite", 0.99)
+            } else {
+                ("nvme_sensor_temp", normalized_sensor, 0.9)
+            }
+        }
+        "acpitz" => ("acpi_thermal_zone_temp", normalized_sensor, 0.75),
+        "amdgpu" => {
+            if normalized_sensor.contains("junction") || normalized_sensor.contains("hotspot") {
+                ("gpu_hotspot_temp", normalized_sensor, 0.9)
+            } else if normalized_sensor.contains("mem") {
+                ("gpu_memory_temp", normalized_sensor, 0.85)
+            } else {
+                ("gpu_edge_temp", normalized_sensor, 0.9)
+            }
+        }
+        _ if is_network_chip(&chip) => {
+            if raw.contains("phy") {
+                ("network_phy_temp", "phy", 0.85)
+            } else if raw.contains("mac") {
+                ("network_mac_temp", "mac", 0.85)
+            } else {
+                ("network_temp", normalized_sensor, 0.65)
+            }
+        }
+        _ if is_asus_ec_chip(&chip) => {
+            if normalized_sensor.contains("vrm") {
+                ("vrm_temp", normalized_sensor, 0.9)
+            } else {
+                ("motherboard_temp", normalized_sensor, 0.75)
+            }
+        }
+        _ => (normalized_sensor, normalized_sensor, 0.5),
+    };
+
+    TemperatureMapping {
+        sensor: sensor.to_string(),
+        instance: instance.to_string(),
+        confidence,
+    }
+}
+
+fn enrich_hardware_labels(
+    metric_labels: &mut BTreeMap<String, String>,
+    component: Component,
+    chip_name: &str,
+    nvme: Option<&LinuxHwmonNvmeInspection>,
+    instance: &str,
+) {
+    let chip = chip_name.trim();
+    metric_labels.insert("source_driver".to_string(), chip.to_string());
+    metric_labels.insert("sensor_instance".to_string(), instance.to_string());
+
+    let device_id = match component {
+        Component::Cpu => "cpu0".to_string(),
+        Component::Gpu => "gpu0".to_string(),
+        Component::Storage => nvme
+            .map(|nvme| nvme.storage_id.clone())
+            .unwrap_or_else(|| "storage".to_string()),
+        Component::Motherboard => "board".to_string(),
+        Component::Memory => "memory".to_string(),
+        Component::Network => format!("net:{}", normalize_sensor_label(chip)),
+        Component::Cooling => "cooling".to_string(),
+        Component::System => "system".to_string(),
+        Component::Battery => "battery".to_string(),
+        Component::Unknown => format!("unknown:{}", normalize_sensor_label(chip)),
+    };
+    metric_labels.insert("device_id".to_string(), device_id);
+}
+
+fn valid_temperature_for_chip(chip_name: &str, normalized_sensor: &str, value: f64) -> bool {
+    if !value.is_finite() || !(-20.0..=250.0).contains(&value) {
+        return false;
+    }
+
+    let chip = chip_name.trim().to_ascii_lowercase();
+    if chip == "nvme" && normalized_sensor.contains("limit") && value <= 0.0 {
+        return false;
+    }
+
+    true
+}
+
+fn read_hwmon_fan_metrics(
+    path: &Path,
+    chip_name: &str,
+    component: Component,
+) -> Result<Vec<MetricSample>> {
+    let mut metrics = Vec::new();
+    let mut entries = fs::read_dir(path)
+        .with_context(|| format!("failed to read hwmon directory {}", path.display()))?
+        .filter_map(|entry| entry.ok())
+        .collect::<Vec<_>>();
+    entries.sort_by_key(|entry| entry.path());
+
+    for entry in entries {
+        let file_name = entry.file_name();
+        let Some(file_name) = file_name.to_str() else {
+            continue;
+        };
+        let Some(index) = fan_input_index(file_name) else {
+            continue;
+        };
+        let Some(raw_rpm) = read_optional_i64(entry.path())? else {
+            continue;
+        };
+        if raw_rpm < 0 {
+            continue;
+        }
+
+        let raw_label = read_optional_trimmed(path.join(format!("fan{index}_label")))
+            .filter(|value| !value.is_empty());
+        let normalized_sensor = normalize_sensor_label(
+            raw_label
+                .as_deref()
+                .unwrap_or_else(|| file_name.trim_end_matches("_input")),
+        );
+        let fan_component = if normalized_sensor.contains("water_flow") {
+            Component::Cooling
+        } else {
+            component
+        };
+        let sensor = if normalized_sensor.contains("water_flow") {
+            "water_flow_rpm".to_string()
+        } else {
+            format!("{normalized_sensor}_rpm")
+        };
+        let instance = if normalized_sensor.contains("water_flow") {
+            "water_flow".to_string()
+        } else {
+            normalized_sensor.clone()
+        };
+
+        let mut metric_labels = labels(&[
+            ("component", fan_component.label_value()),
+            ("sensor", sensor.as_str()),
+            ("source", SOURCE),
+        ]);
+        enrich_hardware_labels(
+            &mut metric_labels,
+            fan_component,
+            chip_name,
+            None,
+            &instance,
+        );
+
+        metrics.push(MetricSample::gauge(
+            names::HARDWARE_FAN_SPEED_RPM,
+            "Hardware fan or pump speed in revolutions per minute.",
+            metric_labels.clone(),
+            raw_rpm as f64,
+        ));
+
+        let mut info_labels = metric_labels;
+        if let Some(raw_label) = raw_label {
+            info_labels.insert("raw_label".to_string(), raw_label);
+        }
+        info_labels.insert("raw_channel".to_string(), format!("fan{index}_input"));
+        info_labels.insert("confidence".to_string(), "0.8".to_string());
+        metrics.push(MetricSample::gauge(
+            names::HARDWARE_SENSOR_INFO,
+            "Hardware sensor mapping information.",
+            info_labels,
+            1.0,
+        ));
+    }
+
+    Ok(metrics)
+}
+
 fn disambiguate_duplicate_sensors(readings: &mut [TemperatureReading]) {
-    let mut totals: BTreeMap<(String, String, String), usize> = BTreeMap::new();
+    let mut totals: BTreeMap<(String, String, String, String), usize> = BTreeMap::new();
     for reading in readings.iter() {
         *totals
             .entry((
                 reading.component.label_value().to_string(),
                 reading.sensor.clone(),
+                reading.labels.get("device_id").cloned().unwrap_or_default(),
                 reading
                     .labels
-                    .get("storage_id")
+                    .get("sensor_instance")
                     .cloned()
                     .unwrap_or_default(),
             ))
             .or_default() += 1;
     }
 
-    let mut seen: BTreeMap<(String, String, String), usize> = BTreeMap::new();
+    let mut seen: BTreeMap<(String, String, String, String), usize> = BTreeMap::new();
     for reading in readings.iter_mut() {
         let key = (
             reading.component.label_value().to_string(),
             reading.sensor.clone(),
+            reading.labels.get("device_id").cloned().unwrap_or_default(),
             reading
                 .labels
-                .get("storage_id")
+                .get("sensor_instance")
                 .cloned()
                 .unwrap_or_default(),
         );
@@ -652,7 +887,11 @@ fn disambiguate_duplicate_sensors(readings: &mut [TemperatureReading]) {
         let index = seen.entry(key).or_default();
         *index += 1;
         if *index > 1 {
-            reading.sensor = format!("{}_{}", reading.sensor, *index);
+            if let Some(instance) = reading.labels.get_mut("sensor_instance") {
+                *instance = format!("{instance}_{index}");
+            } else {
+                reading.sensor = format!("{}_{}", reading.sensor, *index);
+            }
         }
     }
 }
@@ -667,10 +906,33 @@ fn reading_to_metrics(reading: &TemperatureReading) -> Vec<MetricSample> {
 
     let mut metrics = vec![MetricSample::gauge(
         names::TEMPERATURE_CELSIUS,
-        "Temperature reading in degrees Celsius.",
+        "Hardware temperature reading in degrees Celsius.",
         temperature_labels,
         reading.temperature_celsius,
     )];
+
+    let mut info_labels = labels(&[
+        ("component", reading.component.label_value()),
+        ("sensor", reading.sensor.as_str()),
+        ("source", reading.source),
+    ]);
+    info_labels.extend(reading.labels.clone());
+    if let Some(raw_label) = &reading.raw_label {
+        info_labels.insert("raw_label".to_string(), raw_label.clone());
+    }
+    if let Some(raw_channel) = &reading.raw_channel {
+        info_labels.insert("raw_channel".to_string(), raw_channel.clone());
+    }
+    info_labels.insert(
+        "confidence".to_string(),
+        format_confidence(reading.confidence),
+    );
+    metrics.push(MetricSample::gauge(
+        names::HARDWARE_SENSOR_INFO,
+        "Hardware sensor mapping information.",
+        info_labels,
+        1.0,
+    ));
 
     if let Some(critical) = reading.critical_celsius {
         let mut limit_labels = labels(&[
@@ -682,7 +944,7 @@ fn reading_to_metrics(reading: &TemperatureReading) -> Vec<MetricSample> {
         limit_labels.extend(reading.labels.clone());
         metrics.push(MetricSample::gauge(
             names::TEMPERATURE_LIMIT_CELSIUS,
-            "Temperature limit in degrees Celsius.",
+            "Hardware temperature limit in degrees Celsius.",
             limit_labels,
             critical,
         ));
@@ -698,7 +960,7 @@ fn reading_to_metrics(reading: &TemperatureReading) -> Vec<MetricSample> {
         limit_labels.extend(reading.labels.clone());
         metrics.push(MetricSample::gauge(
             names::TEMPERATURE_LIMIT_CELSIUS,
-            "Temperature limit in degrees Celsius.",
+            "Hardware temperature limit in degrees Celsius.",
             limit_labels,
             warning,
         ));
@@ -809,7 +1071,10 @@ fn nvme_to_metrics(
 ) -> Vec<MetricSample> {
     let mut metrics = Vec::new();
     let mut device_labels = labels(&[
+        ("component", "storage"),
+        ("device_id", nvme.storage_id.as_str()),
         ("source", SOURCE),
+        ("source_driver", "nvme"),
         ("storage_id", nvme.storage_id.as_str()),
         ("controller", nvme.controller.as_str()),
     ]);
@@ -830,7 +1095,7 @@ fn nvme_to_metrics(
 
     metrics.push(MetricSample::gauge(
         names::STORAGE_DEVICE_INFO,
-        "Linux NVMe storage identity information.",
+        "Hardware storage device identity information.",
         device_labels,
         1.0,
     ));
@@ -843,7 +1108,10 @@ fn nvme_to_metrics(
             names::STORAGE_NAMESPACE_CAPACITY_BYTES,
             "Linux NVMe namespace capacity in bytes.",
             labels(&[
+                ("component", "storage"),
+                ("device_id", nvme.storage_id.as_str()),
                 ("source", SOURCE),
+                ("source_driver", "nvme"),
                 ("storage_id", nvme.storage_id.as_str()),
                 ("namespace", namespace.namespace.as_str()),
             ]),
@@ -987,12 +1255,38 @@ fn discovery_to_metrics(
 }
 
 fn component_for_chip(chip_name: &str) -> Component {
-    match chip_name.trim().to_ascii_lowercase().as_str() {
-        "coretemp" | "k10temp" | "zenpower" => Component::Cpu,
-        "amdgpu" => Component::Gpu,
-        "nvme" => Component::Storage,
-        _ => Component::Unknown,
+    let chip = chip_name.trim().to_ascii_lowercase();
+    if matches!(chip.as_str(), "coretemp" | "k10temp" | "zenpower") {
+        Component::Cpu
+    } else if chip == "amdgpu" {
+        Component::Gpu
+    } else if chip == "nvme" || chip == "drivetemp" {
+        Component::Storage
+    } else if chip == "acpitz" {
+        Component::System
+    } else if is_asus_ec_chip(&chip) {
+        Component::Motherboard
+    } else if is_network_chip(&chip) {
+        Component::Network
+    } else {
+        Component::Unknown
     }
+}
+
+fn is_asus_ec_chip(chip: &str) -> bool {
+    matches!(chip, "asusec" | "asus_ec_sensors" | "asus")
+}
+
+fn is_network_chip(chip: &str) -> bool {
+    chip.starts_with("en")
+        || chip.contains("ethernet")
+        || chip.contains("iwlwifi")
+        || chip.contains("wifi")
+        || chip.contains("phy")
+}
+
+fn format_confidence(value: f64) -> String {
+    format!("{:.2}", value.clamp(0.0, 1.0))
 }
 
 fn count_temp_inputs(path: &Path) -> Result<usize> {
@@ -1013,6 +1307,14 @@ fn temp_input_index(file_name: &str) -> Option<String> {
         .map(str::to_string)
 }
 
+fn fan_input_index(file_name: &str) -> Option<String> {
+    file_name
+        .strip_prefix("fan")
+        .and_then(|value| value.strip_suffix("_input"))
+        .filter(|value| !value.is_empty() && value.chars().all(|ch| ch.is_ascii_digit()))
+        .map(str::to_string)
+}
+
 fn read_optional_trimmed(path: impl Into<PathBuf>) -> Option<String> {
     fs::read_to_string(path.into())
         .ok()
@@ -1024,11 +1326,12 @@ fn read_optional_i64(path: impl AsRef<Path>) -> Result<Option<i64>> {
     if !path.exists() {
         return Ok(None);
     }
-    let value = fs::read_to_string(path)
-        .with_context(|| format!("failed to read {}", path.display()))?
-        .trim()
-        .parse::<i64>()
-        .with_context(|| format!("failed to parse numeric hwmon value {}", path.display()))?;
+    let Ok(raw) = fs::read_to_string(path) else {
+        return Ok(None);
+    };
+    let Ok(value) = raw.trim().parse::<i64>() else {
+        return Ok(None);
+    };
     Ok(Some(value))
 }
 
@@ -1069,7 +1372,7 @@ mod tests {
 
         let package = readings
             .iter()
-            .find(|reading| reading.sensor == "package")
+            .find(|reading| reading.sensor == "cpu_package_temp")
             .unwrap();
 
         assert_eq!(package.component, Component::Cpu);
@@ -1114,7 +1417,7 @@ mod tests {
         assert!(package.emitted);
         assert_eq!(package.raw_input.as_deref(), Some("67000"));
         assert_eq!(package.celsius, Some(67.0));
-        assert_eq!(package.telemon_sensor.as_deref(), Some("package"));
+        assert_eq!(package.emitted_sensor.as_deref(), Some("package"));
 
         let unknown_chip = inspection
             .chips
@@ -1174,8 +1477,12 @@ mod tests {
 
         let readings = discover_readings(&config).unwrap();
 
-        assert!(readings.iter().any(|reading| reading.sensor == "package"));
-        assert!(!readings.iter().any(|reading| reading.sensor == "composite"));
+        assert!(readings
+            .iter()
+            .any(|reading| reading.sensor == "cpu_package_temp"));
+        assert!(!readings
+            .iter()
+            .any(|reading| reading.sensor == "nvme_composite_temp"));
     }
 
     #[test]
@@ -1190,6 +1497,8 @@ mod tests {
                 critical_celsius: None,
                 warning_celsius: None,
                 raw_label: None,
+                raw_channel: None,
+                confidence: 0.5,
             },
             TemperatureReading {
                 component: Component::Storage,
@@ -1200,6 +1509,8 @@ mod tests {
                 critical_celsius: None,
                 warning_celsius: None,
                 raw_label: None,
+                raw_channel: None,
+                confidence: 0.5,
             },
         ];
 
@@ -1345,7 +1656,7 @@ mod tests {
             .collect::<Vec<_>>();
         assert_eq!(storage_temperatures.len(), 2);
         assert!(storage_temperatures.iter().all(|metric| {
-            metric.labels.get("sensor").map(String::as_str) == Some("composite")
+            metric.labels.get("sensor").map(String::as_str) == Some("nvme_composite_temp")
         }));
         assert!(storage_temperatures.iter().any(|metric| {
             metric.labels.get("storage_id").map(String::as_str) == Some("pci-0000:02:00.0")

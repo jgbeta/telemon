@@ -21,7 +21,7 @@ pub struct MetricSample {
 
 #[derive(Debug, Error, PartialEq, Eq)]
 pub enum MetricError {
-    #[error("project metric name must start with telemon_: {0}")]
+    #[error("project metric name must start with an approved prefix: {0}")]
     InvalidProjectMetricName(String),
 }
 
@@ -43,7 +43,10 @@ impl MetricSample {
         value: f64,
     ) -> Result<Self, MetricError> {
         let name = name.into();
-        if !name.starts_with(names::PREFIX) {
+        if !names::ALLOWED_PREFIXES
+            .iter()
+            .any(|prefix| name.starts_with(prefix))
+        {
             return Err(MetricError::InvalidProjectMetricName(name));
         }
 
@@ -63,7 +66,7 @@ impl MetricSample {
         value: f64,
     ) -> Self {
         Self::new(name, help, MetricKind::Gauge, labels, value)
-            .expect("project metric constants must use telemon_ prefix")
+            .expect("project metric constants must use an approved prefix")
     }
 
     pub fn counter(
@@ -73,7 +76,7 @@ impl MetricSample {
         value: f64,
     ) -> Self {
         Self::new(name, help, MetricKind::Counter, labels, value)
-            .expect("project metric constants must use telemon_ prefix")
+            .expect("project metric constants must use an approved prefix")
     }
 }
 

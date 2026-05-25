@@ -193,7 +193,6 @@ impl Collector for WindowsLhmHttpCollector {
                 unsupported_result(&self.config, self.errors_total, query.message, started_at)
             }
             Ok(query) => {
-                let readings = temperature_readings(&self.config, query.sensors);
                 let mut metrics = collector_status_metrics(
                     COLLECTOR_NAME,
                     true,
@@ -201,7 +200,7 @@ impl Collector for WindowsLhmHttpCollector {
                     self.errors_total,
                     Some(unix_timestamp_seconds()),
                 );
-                metrics.extend(readings.iter().map(temperature_metric));
+                metrics.extend(sensor_metrics(&self.config, query.sensors));
                 CollectorResult::success(COLLECTOR_NAME, metrics, started_at)
             }
             Err(error) => {
@@ -283,6 +282,7 @@ fn missing_provider_status(config: &WindowsLhmHttpConfig) -> &'static str {
 struct TemperatureReading {
     component: Component,
     sensor: String,
+    instance: String,
     value_celsius: f64,
 }
 
@@ -293,7 +293,7 @@ fn temperature_readings(
     let allowlist = normalized_filter_set(&config.sensor_allowlist);
     let denylist = normalized_filter_set(&config.sensor_denylist);
     let mut readings = Vec::new();
-    let mut duplicate_counts: BTreeMap<(String, String), usize> = BTreeMap::new();
+    let mut duplicate_counts: BTreeMap<(String, String, String), usize> = BTreeMap::new();
 
     for sensor in sensors {
         let Some(value_celsius) = parse_temperature_celsius(&sensor.value) else {
@@ -319,21 +319,23 @@ fn temperature_readings(
             continue;
         }
 
+        let sensor_name = canonical_temperature_sensor(component, &sensor.path, &normalized_sensor);
+        let mut instance = normalized_sensor;
         let duplicate_key = (
             component.label_value().to_string(),
-            normalized_sensor.clone(),
+            sensor_name.clone(),
+            instance.clone(),
         );
         let count = duplicate_counts.entry(duplicate_key).or_insert(0);
         *count += 1;
-        let sensor = if *count > 1 {
-            format!("{normalized_sensor}_{count}")
-        } else {
-            normalized_sensor
-        };
+        if *count > 1 {
+            instance = format!("{instance}_{count}");
+        }
 
         readings.push(TemperatureReading {
             component,
-            sensor,
+            sensor: sensor_name,
+            instance,
             value_celsius,
         });
     }
@@ -341,17 +343,406 @@ fn temperature_readings(
     readings
 }
 
-fn temperature_metric(reading: &TemperatureReading) -> MetricSample {
-    MetricSample::gauge(
-        names::TEMPERATURE_CELSIUS,
-        "Temperature reading in degrees Celsius.",
-        labels(&[
-            ("component", reading.component.label_value()),
-            ("sensor", reading.sensor.as_str()),
+fn sensor_metrics(config: &WindowsLhmHttpConfig, sensors: Vec<LhmHttpSensor>) -> Vec<MetricSample> {
+    let allowlist = normalized_filter_set(&config.sensor_allowlist);
+    let denylist = normalized_filter_set(&config.sensor_denylist);
+    let mut metrics = Vec::new();
+    let mut duplicate_counts: BTreeMap<(String, String, String, String), usize> = BTreeMap::new();
+
+    for sensor in sensors {
+        let Some(parsed) = parse_lhm_value(&sensor.value, &sensor) else {
+            continue;
+        };
+        if matches!(parsed.kind, LhmValueKind::TemperatureCelsius)
+            && !valid_temperature(parsed.value)
+        {
+            continue;
+        }
+
+        let component = map_component(&sensor.path);
+        if matches!(parsed.kind, LhmValueKind::TemperatureCelsius)
+            && should_skip_zero_temperature(component, parsed.value)
+        {
+            continue;
+        }
+        if component == Component::Unknown && !config.include_unknown_sensors {
+            continue;
+        }
+
+        let normalized_sensor = normalize_lhm_sensor_label(&sensor.name);
+        if !allowlist.is_empty() && !allowlist.contains(&normalized_sensor) {
+            continue;
+        }
+        if denylist.contains(&normalized_sensor) {
+            continue;
+        }
+
+        let sensor_name =
+            canonical_lhm_sensor_name(parsed.kind, component, &sensor.path, &normalized_sensor);
+        let mut instance = normalized_sensor.clone();
+        let mut metric_labels = labels(&[
+            ("component", component.label_value()),
+            ("sensor", sensor_name.as_str()),
             ("source", SOURCE),
-        ]),
-        reading.value_celsius,
-    )
+            ("source_driver", "librehardwaremonitor"),
+        ]);
+        metric_labels.insert(
+            "device_id".to_string(),
+            lhm_device_id(component, &sensor.path),
+        );
+        apply_lhm_kind_labels(parsed.kind, &normalized_sensor, &mut metric_labels);
+
+        let duplicate_key = (
+            parsed.metric_name.to_string(),
+            component.label_value().to_string(),
+            sensor_name.clone(),
+            instance.clone(),
+        );
+        let count = duplicate_counts.entry(duplicate_key).or_insert(0);
+        *count += 1;
+        if *count > 1 {
+            instance = format!("{instance}_{count}");
+        }
+        metric_labels.insert("sensor_instance".to_string(), instance.clone());
+
+        metrics.push(MetricSample::gauge(
+            parsed.metric_name,
+            parsed.help,
+            metric_labels.clone(),
+            parsed.value,
+        ));
+
+        let mut info_labels = metric_labels;
+        info_labels.insert("raw_label".to_string(), sensor.name.clone());
+        info_labels.insert("raw_channel".to_string(), sensor.path.join("/"));
+        info_labels.insert("confidence".to_string(), "0.70".to_string());
+        metrics.push(MetricSample::gauge(
+            names::HARDWARE_SENSOR_INFO,
+            "Hardware sensor mapping information.",
+            info_labels,
+            1.0,
+        ));
+    }
+
+    metrics
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum LhmValueKind {
+    TemperatureCelsius,
+    VoltageVolts,
+    CurrentAmperes,
+    PowerWatts,
+    PowerLimitWatts,
+    ClockHertz,
+    UtilizationRatio,
+    FanSpeedRpm,
+    FanSpeedRatio,
+    MemoryBytes,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq)]
+struct ParsedLhmValue {
+    kind: LhmValueKind,
+    metric_name: &'static str,
+    help: &'static str,
+    value: f64,
+}
+
+fn parse_lhm_value(value: &str, sensor: &LhmHttpSensor) -> Option<ParsedLhmValue> {
+    if let Some(value) = parse_temperature_celsius(value) {
+        return Some(ParsedLhmValue {
+            kind: LhmValueKind::TemperatureCelsius,
+            metric_name: names::TEMPERATURE_CELSIUS,
+            help: "Hardware temperature reading in degrees Celsius.",
+            value,
+        });
+    }
+
+    let trimmed = value.trim();
+    let lower = trimmed.to_ascii_lowercase();
+    let normalized_name = normalize_lhm_sensor_label(&sensor.name);
+
+    if lower.ends_with("rpm") {
+        return parse_number_before_unit(trimmed, "rpm").map(|value| ParsedLhmValue {
+            kind: LhmValueKind::FanSpeedRpm,
+            metric_name: names::HARDWARE_FAN_SPEED_RPM,
+            help: "Hardware fan or pump speed in revolutions per minute.",
+            value,
+        });
+    }
+
+    if lower.ends_with("mhz") {
+        return parse_number_before_unit(trimmed, "mhz").map(|value| ParsedLhmValue {
+            kind: LhmValueKind::ClockHertz,
+            metric_name: names::HARDWARE_CLOCK_HERTZ,
+            help: "Hardware clock speed in hertz.",
+            value: value * 1_000_000.0,
+        });
+    }
+
+    if lower.ends_with('%') {
+        let kind = if lhm_path_contains(sensor, "fan") {
+            LhmValueKind::FanSpeedRatio
+        } else {
+            LhmValueKind::UtilizationRatio
+        };
+        return parse_number_before_unit(trimmed, "%").map(|value| ParsedLhmValue {
+            kind,
+            metric_name: if kind == LhmValueKind::FanSpeedRatio {
+                names::FAN_SPEED_RATIO
+            } else {
+                names::HARDWARE_UTILIZATION_RATIO
+            },
+            help: if kind == LhmValueKind::FanSpeedRatio {
+                "Hardware fan speed as a ratio from 0 to 1."
+            } else {
+                "Hardware utilization as a ratio from 0 to 1."
+            },
+            value: (value / 100.0).clamp(0.0, 1.0),
+        });
+    }
+
+    if lower.ends_with(" v") || lower.ends_with('v') {
+        return parse_number_before_unit(trimmed, "v").map(|value| ParsedLhmValue {
+            kind: LhmValueKind::VoltageVolts,
+            metric_name: names::HARDWARE_VOLTAGE_VOLTS,
+            help: "Hardware voltage in volts.",
+            value,
+        });
+    }
+
+    if lower.ends_with(" a") || lower.ends_with('a') {
+        return parse_number_before_unit(trimmed, "a").map(|value| ParsedLhmValue {
+            kind: LhmValueKind::CurrentAmperes,
+            metric_name: names::HARDWARE_CURRENT_AMPERES,
+            help: "Hardware current in amperes.",
+            value,
+        });
+    }
+
+    if lower.ends_with(" w") || lower.ends_with('w') {
+        let is_limit = normalized_name.contains("limit");
+        return parse_number_before_unit(trimmed, "w").map(|value| ParsedLhmValue {
+            kind: if is_limit {
+                LhmValueKind::PowerLimitWatts
+            } else {
+                LhmValueKind::PowerWatts
+            },
+            metric_name: if is_limit {
+                names::HARDWARE_POWER_LIMIT_WATTS
+            } else {
+                names::HARDWARE_POWER_WATTS
+            },
+            help: if is_limit {
+                "Hardware power limit in watts."
+            } else {
+                "Hardware power in watts."
+            },
+            value,
+        });
+    }
+
+    parse_memory_bytes(trimmed).map(|value| ParsedLhmValue {
+        kind: LhmValueKind::MemoryBytes,
+        metric_name: names::HARDWARE_MEMORY_BYTES,
+        help: "Hardware memory bytes by state.",
+        value,
+    })
+}
+
+fn parse_number_before_unit(value: &str, unit: &str) -> Option<f64> {
+    let lower = value.to_ascii_lowercase();
+    let marker = lower.rfind(unit)?;
+    let number_text = value[..marker].trim().replace(',', ".");
+    let token = number_text
+        .split_whitespace()
+        .last()
+        .unwrap_or(&number_text);
+    token.parse::<f64>().ok()
+}
+
+fn parse_memory_bytes(value: &str) -> Option<f64> {
+    let lower = value.trim().to_ascii_lowercase();
+    let units = [
+        ("gib", 1024.0_f64.powi(3)),
+        ("gb", 1000.0_f64.powi(3)),
+        ("mib", 1024.0_f64.powi(2)),
+        ("mb", 1000.0_f64.powi(2)),
+        ("kib", 1024.0),
+        ("kb", 1000.0),
+    ];
+    for (unit, multiplier) in units {
+        if lower.ends_with(unit) {
+            return parse_number_before_unit(value, unit).map(|number| number * multiplier);
+        }
+    }
+    None
+}
+
+fn canonical_lhm_sensor_name(
+    kind: LhmValueKind,
+    component: Component,
+    path: &[String],
+    normalized_sensor: &str,
+) -> String {
+    match kind {
+        LhmValueKind::TemperatureCelsius => {
+            canonical_temperature_sensor(component, path, normalized_sensor)
+        }
+        LhmValueKind::VoltageVolts => format!("{}_voltage", normalized_sensor),
+        LhmValueKind::CurrentAmperes => format!("{}_current", normalized_sensor),
+        LhmValueKind::PowerWatts => format!("{}_power", normalized_sensor),
+        LhmValueKind::PowerLimitWatts => format!("{}_power_limit", normalized_sensor),
+        LhmValueKind::ClockHertz => format!("{}_clock", normalized_sensor),
+        LhmValueKind::UtilizationRatio => format!("{}_utilization", normalized_sensor),
+        LhmValueKind::FanSpeedRpm => {
+            if normalized_sensor.ends_with("_rpm") {
+                normalized_sensor.to_string()
+            } else {
+                format!("{}_rpm", normalized_sensor)
+            }
+        }
+        LhmValueKind::FanSpeedRatio => {
+            if normalized_sensor.ends_with("_fan") {
+                format!("{}_percent", normalized_sensor)
+            } else {
+                format!("{}_fan_percent", normalized_sensor)
+            }
+        }
+        LhmValueKind::MemoryBytes => format!("{}_memory", normalized_sensor),
+    }
+}
+
+fn canonical_temperature_sensor(
+    component: Component,
+    path: &[String],
+    normalized_sensor: &str,
+) -> String {
+    match component {
+        Component::Cpu => {
+            if normalized_sensor == "package"
+                || normalized_sensor.contains("tctl")
+                || normalized_sensor.contains("tdie")
+            {
+                "cpu_package_temp".to_string()
+            } else if normalized_sensor.starts_with("core") {
+                "cpu_core_temp".to_string()
+            } else {
+                "cpu_temp".to_string()
+            }
+        }
+        Component::Gpu => {
+            if normalized_sensor.contains("hotspot") || normalized_sensor.contains("hot_spot") {
+                "gpu_hotspot_temp".to_string()
+            } else if normalized_sensor.contains("memory") {
+                "gpu_memory_temp".to_string()
+            } else {
+                "gpu_edge_temp".to_string()
+            }
+        }
+        Component::Storage => {
+            if normalized_sensor == "composite" && lhm_path_contains_text(path, "nvme") {
+                "nvme_composite_temp".to_string()
+            } else if normalized_sensor == "composite" {
+                "storage_composite_temp".to_string()
+            } else {
+                "storage_sensor_temp".to_string()
+            }
+        }
+        Component::Motherboard => {
+            if normalized_sensor.contains("vrm") {
+                "vrm_temp".to_string()
+            } else {
+                "motherboard_temp".to_string()
+            }
+        }
+        Component::Memory => "memory_temp".to_string(),
+        Component::Network => "network_temp".to_string(),
+        Component::Cooling => "cooling_temp".to_string(),
+        Component::System => "system_temp".to_string(),
+        Component::Battery => "battery_temp".to_string(),
+        Component::Unknown => normalized_sensor.to_string(),
+    }
+}
+
+fn apply_lhm_kind_labels(
+    kind: LhmValueKind,
+    normalized_sensor: &str,
+    metric_labels: &mut BTreeMap<String, String>,
+) {
+    match kind {
+        LhmValueKind::ClockHertz => {
+            let clock = if normalized_sensor.contains("memory") {
+                "memory"
+            } else if normalized_sensor.contains("bus") {
+                "bus"
+            } else {
+                "core"
+            };
+            metric_labels.insert("clock".to_string(), clock.to_string());
+        }
+        LhmValueKind::UtilizationRatio => {
+            let engine = if normalized_sensor.contains("memory") {
+                "memory"
+            } else if normalized_sensor.contains("video") {
+                "video"
+            } else {
+                "total"
+            };
+            metric_labels.insert("engine".to_string(), engine.to_string());
+        }
+        LhmValueKind::PowerLimitWatts => {
+            metric_labels.insert("limit".to_string(), "current".to_string());
+        }
+        LhmValueKind::MemoryBytes => {
+            metric_labels.insert("memory".to_string(), "ram".to_string());
+            let state = if normalized_sensor.contains("free") {
+                "free"
+            } else if normalized_sensor.contains("used") {
+                "used"
+            } else {
+                "total"
+            };
+            metric_labels.insert("state".to_string(), state.to_string());
+        }
+        _ => {}
+    }
+}
+
+fn lhm_device_id(component: Component, path: &[String]) -> String {
+    match component {
+        Component::Cpu => "cpu0".to_string(),
+        Component::Gpu => "gpu0".to_string(),
+        Component::Storage => path
+            .iter()
+            .find(|part| {
+                let lower = part.to_ascii_lowercase();
+                lower.contains("nvme")
+                    || lower.contains("ssd")
+                    || lower.contains("hdd")
+                    || lower.contains("disk")
+            })
+            .map(|part| format!("storage:{}", normalize_sensor_label(part)))
+            .unwrap_or_else(|| "storage".to_string()),
+        Component::Motherboard => "board".to_string(),
+        Component::Memory => "memory".to_string(),
+        Component::Network => "network".to_string(),
+        Component::Cooling => "cooling".to_string(),
+        Component::System => "system".to_string(),
+        Component::Battery => "battery".to_string(),
+        Component::Unknown => "unknown".to_string(),
+    }
+}
+
+fn lhm_path_contains(sensor: &LhmHttpSensor, needle: &str) -> bool {
+    sensor.name.to_ascii_lowercase().contains(needle)
+        || lhm_path_contains_text(&sensor.path, needle)
+}
+
+fn lhm_path_contains_text(path: &[String], needle: &str) -> bool {
+    path.iter()
+        .any(|part| part.to_ascii_lowercase().contains(needle))
 }
 
 fn parse_temperature_celsius(value: &str) -> Option<f64> {
@@ -399,10 +790,23 @@ fn map_component(path: &[String]) -> Component {
         || combined.contains("vrm")
         || combined.contains("pch")
         || combined.contains("m2 #")
+        || combined.contains("asus")
+        || combined.contains("embedded controller")
     {
         Component::Motherboard
+    } else if combined.contains("memory") || combined.contains("ram") {
+        Component::Memory
+    } else if combined.contains("network")
+        || combined.contains("ethernet")
+        || combined.contains("wifi")
+    {
+        Component::Network
+    } else if combined.contains("fan") || combined.contains("pump") || combined.contains("cooler") {
+        Component::Cooling
     } else if combined.contains("battery") {
         Component::Battery
+    } else if combined.contains("acpi") || combined.contains("thermal zone") {
+        Component::System
     } else {
         Component::Unknown
     }
@@ -852,22 +1256,23 @@ mod tests {
         assert_eq!(readings.len(), 5);
         assert!(readings.iter().any(|reading| {
             reading.component == Component::Cpu
-                && reading.sensor == "core_tctl_tdie"
+                && reading.sensor == "cpu_package_temp"
+                && reading.instance == "core_tctl_tdie"
                 && reading.value_celsius == 47.6
         }));
         assert!(readings.iter().any(|reading| {
             reading.component == Component::Cpu
-                && reading.sensor == "package"
+                && reading.sensor == "cpu_package_temp"
                 && reading.value_celsius == 43.8
         }));
         assert!(readings.iter().any(|reading| {
             reading.component == Component::Gpu
-                && reading.sensor == "hotspot"
+                && reading.sensor == "gpu_hotspot_temp"
                 && reading.value_celsius == 43.7
         }));
         assert!(readings.iter().any(|reading| {
             reading.component == Component::Storage
-                && reading.sensor == "composite"
+                && reading.sensor == "nvme_composite_temp"
                 && reading.value_celsius == 46.0
         }));
     }
@@ -886,7 +1291,7 @@ mod tests {
         let result = collector.collect();
 
         assert!(result.success);
-        assert_eq!(metric_value(&result, "package"), 67.0);
+        assert_eq!(metric_value(&result, "cpu_package_temp"), 67.0);
         assert!(result.metrics.iter().any(|metric| {
             metric.name == names::TEMPERATURE_CELSIUS
                 && metric.labels.get("component").map(String::as_str) == Some("cpu")
@@ -906,9 +1311,11 @@ mod tests {
             ],
         );
 
-        assert_eq!(readings[0].sensor, "core_1");
-        assert_eq!(readings[1].sensor, "core_1_2");
-        assert_eq!(readings[2].sensor, "core");
+        assert_eq!(readings[0].sensor, "cpu_core_temp");
+        assert_eq!(readings[0].instance, "core_1");
+        assert_eq!(readings[1].sensor, "cpu_core_temp");
+        assert_eq!(readings[1].instance, "core_1_2");
+        assert_eq!(readings[2].sensor, "gpu_edge_temp");
     }
 
     #[test]
@@ -939,7 +1346,7 @@ mod tests {
         );
 
         assert_eq!(readings.len(), 1);
-        assert_eq!(readings[0].sensor, "package");
+        assert_eq!(readings[0].sensor, "cpu_package_temp");
     }
 
     #[test]
@@ -956,7 +1363,64 @@ mod tests {
         );
 
         assert_eq!(readings.len(), 1);
-        assert_eq!(readings[0].sensor, "core_1");
+        assert_eq!(readings[0].sensor, "cpu_core_temp");
+        assert_eq!(readings[0].instance, "core_1");
+    }
+
+    #[test]
+    fn collect_emits_generic_lhm_hardware_metric_families() {
+        let config = WindowsLhmHttpConfig::default();
+        let provider = FakeProvider {
+            result: Ok(available_query(vec![
+                sensor(&["NVIDIA GeForce", "Powers", "GPU Power"], "57.6 W"),
+                sensor(&["NVIDIA GeForce", "Clocks", "GPU Core"], "2520.0 MHz"),
+                sensor(&["NVIDIA GeForce", "Load", "GPU Core"], "31.0 %"),
+                sensor(&["NVIDIA GeForce", "Fans", "GPU Fan"], "42.0 %"),
+                sensor(&["ASUS EC", "Fans", "Water Flow"], "1200 RPM"),
+                sensor(&["ASUS EC", "Voltages", "+12V"], "12.048 V"),
+                sensor(&["AMD Ryzen", "Currents", "CPU TDC"], "9.5 A"),
+            ])),
+        };
+        let mut collector = WindowsLhmHttpCollector::with_provider(config, provider);
+
+        let result = collector.collect();
+
+        assert!(result.success);
+        assert!(result.metrics.iter().any(|metric| {
+            metric.name == names::HARDWARE_POWER_WATTS
+                && metric.labels.get("component").map(String::as_str) == Some("gpu")
+                && metric.value == 57.6
+        }));
+        assert!(result.metrics.iter().any(|metric| {
+            metric.name == names::HARDWARE_CLOCK_HERTZ
+                && metric.labels.get("clock").map(String::as_str) == Some("core")
+                && metric.value == 2_520_000_000.0
+        }));
+        assert!(result.metrics.iter().any(|metric| {
+            metric.name == names::HARDWARE_UTILIZATION_RATIO
+                && metric.labels.get("engine").map(String::as_str) == Some("total")
+                && metric.value == 0.31
+        }));
+        assert!(result.metrics.iter().any(|metric| {
+            metric.name == names::FAN_SPEED_RATIO
+                && metric.labels.get("sensor").map(String::as_str) == Some("gpu_fan_percent")
+                && metric.value == 0.42
+        }));
+        assert!(result.metrics.iter().any(|metric| {
+            metric.name == names::HARDWARE_FAN_SPEED_RPM
+                && metric.labels.get("sensor").map(String::as_str) == Some("water_flow_rpm")
+                && metric.value == 1200.0
+        }));
+        assert!(result.metrics.iter().any(|metric| {
+            metric.name == names::HARDWARE_VOLTAGE_VOLTS
+                && metric.labels.get("sensor").map(String::as_str) == Some("12v_voltage")
+                && metric.value == 12.048
+        }));
+        assert!(result.metrics.iter().any(|metric| {
+            metric.name == names::HARDWARE_CURRENT_AMPERES
+                && metric.labels.get("sensor").map(String::as_str) == Some("cpu_tdc_current")
+                && metric.value == 9.5
+        }));
     }
 
     #[test]

@@ -14,8 +14,8 @@ metrics first:
 
 ```bash
 curl -s http://127.0.0.1:9185/metrics > /tmp/telemon-native.metrics
-grep 'telemon_temperature_celsius.*source="linux_hwmon"' /tmp/telemon-native.metrics
-grep -c 'telemon_temperature_celsius.*source="linux_hwmon"' /tmp/telemon-native.metrics
+grep 'hardware_temperature_celsius.*source="linux_hwmon"' /tmp/telemon-native.metrics
+grep -c 'hardware_temperature_celsius.*source="linux_hwmon"' /tmp/telemon-native.metrics
 ```
 
 This is the baseline the Docker exporter should try to match. On your tested
@@ -99,8 +99,8 @@ docker exec telemon-exporter-docker-test sh -lc \
 
 ```bash
 curl -s http://127.0.0.1:9187/metrics > /tmp/telemon-docker.metrics
-grep 'telemon_temperature_celsius.*source="linux_hwmon"' /tmp/telemon-docker.metrics
-grep -c 'telemon_temperature_celsius.*source="linux_hwmon"' /tmp/telemon-docker.metrics
+grep 'hardware_temperature_celsius.*source="linux_hwmon"' /tmp/telemon-docker.metrics
+grep -c 'hardware_temperature_celsius.*source="linux_hwmon"' /tmp/telemon-docker.metrics
 ```
 
 If the hwmon count is unexpectedly low, run the hardware inspection command

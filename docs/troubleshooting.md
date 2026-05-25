@@ -84,9 +84,9 @@ Unraid startup:
 - If Docker shows fewer sensors than native, check that `/sys` is mounted
   read-only at `/host/sys` and set
   `TELEMON_LINUX_HWMON_INCLUDE_UNKNOWN=true`.
-- Check `telemon_collector_samples{collector="linux_hwmon",kind="temperature"}`,
-  `telemon_hwmon_chips_discovered`, and
-  `telemon_hwmon_temperature_inputs_discovered` to distinguish zero host
+- Check `exporter_collector_samples{collector="linux_hwmon",kind="temperature"}`,
+  `hardware_hwmon_chips_discovered`, and
+  `hardware_hwmon_temperature_inputs_discovered` to distinguish zero host
   sensors from filters or classification gaps.
 - For NVMe drive identity, verify that `/sys/class/hwmon/hwmon*/name` reports
   `nvme` and that the canonical hwmon path contains `/nvme/nvmeN/`. Use
@@ -109,7 +109,7 @@ NVIDIA GPU metrics are partial:
 
 - Fan speed is not available on every GPU and is skipped when unsupported.
 - Temperature/utilization/memory calls are collected independently, so one failed call does not suppress the other GPU metrics.
-- `telemon_collector_errors_total{collector="nvidia_nvml"}` increments when individual NVML calls fail.
+- `exporter_collector_errors_total{collector="nvidia_nvml"}` increments when individual NVML calls fail.
 
 Useful NVIDIA checks:
 

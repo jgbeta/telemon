@@ -84,7 +84,7 @@
       },
       "targets": [
         {
-          "expr": "min(telemon_collector_up{collector=\"linux_hwmon\",user_name=~\"$user_name\",device_name=~\"$device_name\",machine_uuid=~\"$machine_uuid\",os=~\"$os\",device_uuid=~\"$device_uuid\"})",
+          "expr": "min(exporter_collector_up{collector=\"linux_hwmon\",user_name=~\"$user_name\",device_name=~\"$device_name\",machine_uuid=~\"$machine_uuid\",os=~\"$os\",device_uuid=~\"$device_uuid\"})",
           "refId": "A"
         }
       ],
@@ -122,7 +122,7 @@
       },
       "targets": [
         {
-          "expr": "max by (device_name, device_uuid, instance) (telemon_temperature_celsius{user_name=~\"$user_name\",device_name=~\"$device_name\",machine_uuid=~\"$machine_uuid\",os=~\"$os\",device_uuid=~\"$device_uuid\"})",
+          "expr": "max by (device_name, device_uuid, instance) (hardware_temperature_celsius{user_name=~\"$user_name\",device_name=~\"$device_name\",machine_uuid=~\"$machine_uuid\",os=~\"$os\",device_uuid=~\"$device_uuid\"})",
           "refId": "A"
         }
       ],
@@ -160,7 +160,7 @@
       },
       "targets": [
         {
-          "expr": "telemon_temperature_celsius{component=\"cpu\",user_name=~\"$user_name\",device_name=~\"$device_name\",machine_uuid=~\"$machine_uuid\",os=~\"$os\",device_uuid=~\"$device_uuid\"}",
+          "expr": "hardware_temperature_celsius{component=\"cpu\",user_name=~\"$user_name\",device_name=~\"$device_name\",machine_uuid=~\"$machine_uuid\",os=~\"$os\",device_uuid=~\"$device_uuid\"}",
           "legendFormat": "{{ device_name }} {{ sensor }}",
           "refId": "A"
         }
@@ -191,7 +191,7 @@
       },
       "targets": [
         {
-          "expr": "telemon_temperature_celsius{user_name=~\"$user_name\",device_name=~\"$device_name\",machine_uuid=~\"$machine_uuid\",os=~\"$os\",device_uuid=~\"$device_uuid\"}",
+          "expr": "hardware_temperature_celsius{user_name=~\"$user_name\",device_name=~\"$device_name\",machine_uuid=~\"$machine_uuid\",os=~\"$os\",device_uuid=~\"$device_uuid\"}",
           "format": "table",
           "instant": true,
           "refId": "A"

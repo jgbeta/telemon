@@ -6,6 +6,10 @@ pub enum Component {
     Gpu,
     Storage,
     Motherboard,
+    Memory,
+    Network,
+    Cooling,
+    System,
     Battery,
     Unknown,
 }
@@ -20,6 +24,8 @@ pub struct TemperatureReading {
     pub critical_celsius: Option<f64>,
     pub warning_celsius: Option<f64>,
     pub raw_label: Option<String>,
+    pub raw_channel: Option<String>,
+    pub confidence: f64,
 }
 
 impl Component {
@@ -29,6 +35,10 @@ impl Component {
             Component::Gpu => "gpu",
             Component::Storage => "storage",
             Component::Motherboard => "motherboard",
+            Component::Memory => "memory",
+            Component::Network => "network",
+            Component::Cooling => "cooling",
+            Component::System => "system",
             Component::Battery => "battery",
             Component::Unknown => "unknown",
         }
@@ -73,6 +83,10 @@ mod tests {
         assert_eq!(Component::Cpu.label_value(), "cpu");
         assert_eq!(Component::Gpu.label_value(), "gpu");
         assert_eq!(Component::Storage.label_value(), "storage");
+        assert_eq!(Component::Memory.label_value(), "memory");
+        assert_eq!(Component::Network.label_value(), "network");
+        assert_eq!(Component::Cooling.label_value(), "cooling");
+        assert_eq!(Component::System.label_value(), "system");
         assert_eq!(Component::Unknown.label_value(), "unknown");
     }
 
