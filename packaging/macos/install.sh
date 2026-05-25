@@ -128,6 +128,15 @@ if [ ! -x "$SOURCE_BINARY" ]; then
   exit 1
 fi
 
+verify_launchdaemon_binary() {
+  local expected="$INSTALL_DIR/telemon-exporter"
+
+  if ! grep -Fq "<string>$expected</string>" "$PLIST"; then
+    echo "LaunchDaemon $PLIST does not point to $expected" >&2
+    exit 1
+  fi
+}
+
 configure_pf_for_prometheus() {
   local prometheus_ip="$1"
   local temp_pf_conf
@@ -384,6 +393,7 @@ configure_registration_config
 install -m 0644 "packaging/macos/com.telemon.exporter.plist" "$PLIST"
 chown root:wheel "$PLIST"
 chmod 0644 "$PLIST"
+verify_launchdaemon_binary
 
 if launchctl print system/com.telemon.exporter >/dev/null 2>&1; then
   launchctl bootout system "$PLIST" || true

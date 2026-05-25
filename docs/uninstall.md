@@ -10,6 +10,9 @@ There are two different levels of removal:
 - **Full reset** removes config and state too. The next install will enroll
   again and may receive a new `device_uuid`.
 
+There is also a repair/migration case: remove a stale runtime without closing
+Prometheus scrape access. Use the preserve-firewall options for that path.
+
 ## Linux `.deb`
 
 For Debian/Ubuntu-like systems installed with `dist/linux/telemon-exporter_*.deb`:
@@ -37,6 +40,12 @@ sudo dpkg --purge telemon-exporter
 The package lifecycle scripts remove the Telemon-managed UFW rule recorded in
 `/etc/telemon/prometheus-firewall-rule` or `/etc/telemon/prometheus-server-ip`.
 Rules added manually must be removed manually.
+
+When a `.deb` is installed over an older bootstrap/source install, package
+`postinst` backs up stale `/etc/systemd/system/telemon-exporter.service` units
+and stale `/usr/local/bin/telemon-exporter` binaries so the service uses
+`/usr/bin/telemon-exporter`. It preserves or recreates the recorded scrape
+firewall rule during that migration.
 
 For a full local reset after package removal:
 
@@ -68,13 +77,14 @@ sudo bash packaging/linux/uninstall.sh
 ```
 
 That script stops/disables the systemd service, removes
-`/etc/systemd/system/telemon-exporter.service`, reloads systemd, and removes
-the Telemon-managed UFW rule when it was recorded.
+`/etc/systemd/system/telemon-exporter.service`, removes
+`/usr/local/bin/telemon-exporter`, reloads systemd, and removes the
+Telemon-managed UFW rule when it was recorded.
 
-Remove the bootstrap/source-installed binary:
+For package migration or repair, keep the recorded scrape firewall state:
 
 ```bash
-sudo rm -f /usr/local/bin/telemon-exporter
+sudo bash packaging/linux/uninstall.sh --preserve-firewall
 ```
 
 For a full local reset:
@@ -162,6 +172,15 @@ After a full reset, the Telemon compose volumes should be gone.
 This is the host-monitoring exporter container from
 `deploy/exporter/docker-compose.production.yml`.
 
+Before starting a replacement exporter, check for stale containers or host
+processes still binding the scrape ports:
+
+```bash
+docker ps --filter name=telemon-exporter
+ss -ltnp 'sport = :9185' || true
+ss -ltnp 'sport = :9187' || true
+```
+
 Stop and remove the container while preserving `/config` state:
 
 ```bash
@@ -217,11 +236,16 @@ matching `Telemon Exporter 9185*`. It preserves:
 C:\ProgramData\Telemon\exporter.yml
 ```
 
+For service repair or migration where Prometheus should keep scrape access:
+
+```powershell
+.\packaging\windows\uninstall-service.ps1 -PreserveFirewall
+```
+
 For a full local reset:
 
 ```powershell
-Remove-Item -Recurse -Force "C:\Program Files\Telemon"
-Remove-Item -Recurse -Force "C:\ProgramData\Telemon"
+.\packaging\windows\uninstall-service.ps1 -RemoveFiles
 ```
 
 Validate removal:
@@ -250,12 +274,16 @@ The script preserves:
 /Library/Application Support/Telemon/exporter.yml
 ```
 
+For service repair or migration where Prometheus should keep scrape access:
+
+```bash
+sudo packaging/macos/uninstall.sh --preserve-firewall
+```
+
 For a full local reset:
 
 ```bash
-sudo rm -rf /usr/local/libexec/telemon
-sudo rm -rf "/Library/Application Support/Telemon"
-sudo rm -rf /Library/Logs/Telemon
+sudo packaging/macos/uninstall.sh --remove-files
 ```
 
 Validate removal:

@@ -62,5 +62,5 @@ Uninstall:
 .\packaging\windows\uninstall-service.ps1
 ```
 
-The uninstall script removes `Telemon Exporter 9185*` firewall rules and preserves `C:\ProgramData\Telemon\exporter.yml`.
+The uninstall script removes `Telemon Exporter 9185*` firewall rules and preserves `C:\ProgramData\Telemon\exporter.yml`. Use `-PreserveFirewall` for service repair or migration, and `-RemoveFiles` for a full local reset.
 For full reset and reinstall cleanup commands, see `..\..\docs\uninstall.md`.

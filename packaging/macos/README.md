@@ -43,3 +43,5 @@ sudo packaging/macos/uninstall.sh
 ```
 
 The uninstall script preserves `/Library/Application Support/Telemon/exporter.yml`.
+Use `--preserve-firewall` for service repair or migration, and `--remove-files`
+for a full local reset.

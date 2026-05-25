@@ -20,7 +20,7 @@ Run from Administrator PowerShell:
 .\packaging\windows\install-service.ps1 -BinaryPath .\target\release\telemon-exporter.exe
 ```
 
-The installer creates `C:\ProgramData\Telemon\exporter.yml` from `packaging\windows\config.default.yml` on first install and preserves it on later runs. The default Windows config disables Linux hwmon, enables Windows baseline/inventory collectors, and leaves NVIDIA NVML plus `windows_lhm_http` enabled as optional collectors. Missing optional providers are non-fatal.
+The installer creates `C:\ProgramData\Telemon\exporter.yml` from `packaging\windows\config.default.yml` on first install and preserves it on later runs. The default Windows config disables Linux hwmon, enables Windows baseline/inventory collectors, and leaves NVIDIA NVML plus `windows_lhm_http` enabled as optional collectors. Missing optional providers are non-fatal. Existing services are reconfigured to the selected binary path and validated before startup.
 
 To add a source-restricted inbound firewall rule for the Prometheus server:
 
@@ -113,5 +113,5 @@ curl.exe -v --connect-timeout 3 http://<exporter-lan-ip>:9185/metrics
 .\packaging\windows\uninstall-service.ps1
 ```
 
-The uninstall script preserves `C:\ProgramData\Telemon\exporter.yml`. It removes firewall rules named `Telemon Exporter 9185*`.
+The uninstall script preserves `C:\ProgramData\Telemon\exporter.yml`. It removes firewall rules named `Telemon Exporter 9185*`. Use `-PreserveFirewall` for service repair or migration where Prometheus should keep scrape access, and `-RemoveFiles` for a full local reset.
 For full reset commands, see `uninstall.md`.

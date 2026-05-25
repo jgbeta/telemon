@@ -7,8 +7,39 @@ if [ "$(id -u)" -ne 0 ]; then
 fi
 
 UNIT_FILE="/etc/systemd/system/telemon-exporter.service"
+TARGET_BINARY="/usr/local/bin/telemon-exporter"
 PROMETHEUS_IP_FILE="/etc/telemon/prometheus-server-ip"
 PROMETHEUS_FIREWALL_FILE="/etc/telemon/prometheus-firewall-rule"
+PRESERVE_FIREWALL=false
+
+usage() {
+  cat <<'USAGE'
+Usage: sudo bash packaging/linux/uninstall.sh [options]
+
+Options:
+  --preserve-firewall   Remove the bootstrap service/binary but keep recorded
+                        Prometheus scrape firewall state for package migration.
+  --help, -h            Show this help.
+USAGE
+}
+
+while [ "$#" -gt 0 ]; do
+  case "$1" in
+    --preserve-firewall)
+      PRESERVE_FIREWALL=true
+      shift
+      ;;
+    --help|-h)
+      usage
+      exit 0
+      ;;
+    *)
+      usage >&2
+      echo "unknown option: $1" >&2
+      exit 1
+      ;;
+  esac
+done
 
 read_firewall_value() {
   local key="$1"
@@ -47,11 +78,23 @@ remove_ufw_rule() {
   rm -f "$PROMETHEUS_IP_FILE" "$PROMETHEUS_FIREWALL_FILE"
 }
 
-systemctl stop telemon-exporter.service >/dev/null 2>&1 || true
-systemctl disable telemon-exporter.service >/dev/null 2>&1 || true
+if command -v systemctl >/dev/null 2>&1; then
+  systemctl stop telemon-exporter.service >/dev/null 2>&1 || true
+  systemctl disable telemon-exporter.service >/dev/null 2>&1 || true
+fi
 rm -f "$UNIT_FILE"
-remove_ufw_rule
-systemctl daemon-reload
+rm -f "$TARGET_BINARY"
+
+if [ "$PRESERVE_FIREWALL" = "true" ]; then
+  echo "preserved Telemon firewall state under /etc/telemon"
+else
+  remove_ufw_rule
+fi
+
+if command -v systemctl >/dev/null 2>&1; then
+  systemctl daemon-reload || true
+fi
 
 echo "telemon-exporter service removed"
+echo "bootstrap binary removed from $TARGET_BINARY"
 echo "configuration remains at /etc/telemon/exporter.yml"

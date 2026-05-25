@@ -20,6 +20,11 @@ path:
 sudo dpkg -i dist/linux/telemon-exporter_*.deb
 ```
 
+If a host previously used the bootstrap/source installer, the package install
+backs up stale `/etc/systemd/system/telemon-exporter.service` overrides and
+stale `/usr/local/bin/telemon-exporter` binaries so the service uses the `.deb`
+binary at `/usr/bin/telemon-exporter`.
+
 If you install without enrollment environment variables, run the interactive setup helper afterward:
 
 ```bash
@@ -139,13 +144,18 @@ From the Prometheus server:
 curl -v --connect-timeout 3 http://<exporter-lan-ip>:9185/metrics
 ```
 
-If packets reach the exporter host but the connection times out, inspect local firewall behavior:
+If packets reach the exporter host but the connection times out, inspect local firewall behavior and the active service path:
 
 ```bash
+systemctl cat telemon-exporter
 sudo tcpdump -ni any 'host <monitoring-server-ip> and tcp port 9185'
 sudo ufw status verbose
 sudo ufw status numbered
 ```
+
+For `.deb` installs, `systemctl cat telemon-exporter` should show
+`/usr/bin/telemon-exporter`. A remaining `/usr/local/bin/telemon-exporter`
+service means an older bootstrap unit is still active.
 
 ## Remove
 

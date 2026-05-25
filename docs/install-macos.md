@@ -88,5 +88,7 @@ sudo packaging/macos/uninstall.sh
 ```
 
 The uninstall script preserves `/Library/Application Support/Telemon/exporter.yml`.
-It removes the `pf` anchor created by `--prometheus-server-ip`.
+It removes the `pf` anchor created by `--prometheus-server-ip`. Use
+`--preserve-firewall` for service repair or migration where Prometheus should
+keep scrape access, and `--remove-files` for a full local reset.
 For full reset commands, see `uninstall.md`.

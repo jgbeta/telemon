@@ -396,6 +396,25 @@ function Show-ServiceStartupDiagnostics {
     Write-Host ('  "{0}" run --config "{1}"' -f $TargetBinary, $ConfigPath)
 }
 
+function Assert-TelemonServiceBinaryPath {
+    param(
+        [string]$ServiceName,
+        [string]$TargetBinary
+    )
+
+    $escapedServiceName = $ServiceName.Replace("'", "''")
+    $serviceInfo = Get-CimInstance -ClassName Win32_Service -Filter "Name='$escapedServiceName'" -ErrorAction Stop
+    if (-not $serviceInfo) {
+        throw "Service $ServiceName was not found after install"
+    }
+
+    $expected = [System.IO.Path]::GetFullPath($TargetBinary).ToLowerInvariant()
+    $actual = [string]$serviceInfo.PathName
+    if (-not $actual.ToLowerInvariant().Contains($expected)) {
+        throw "Service $ServiceName points to an unexpected binary. Expected $expected in PathName, got: $actual"
+    }
+}
+
 function Start-TelemonServiceBounded {
     param(
         [string]$ServiceName,
@@ -513,6 +532,8 @@ if ($service) {
         -Description "Native Prometheus exporter for LAN hardware telemetry"
     sc.exe config $ServiceName obj= "$serviceAccountName" | Out-Null
 }
+
+Assert-TelemonServiceBinaryPath -ServiceName $ServiceName -TargetBinary $targetBinary
 
 if ($AddFirewallRule) {
     $ruleName = "Telemon Exporter 9185"

@@ -1,5 +1,9 @@
 param(
-    [string]$ServiceName = "TelemonExporter"
+    [string]$ServiceName = "TelemonExporter",
+    [string]$InstallDir = "C:\Program Files\Telemon",
+    [string]$ConfigDir = "C:\ProgramData\Telemon",
+    [switch]$PreserveFirewall,
+    [switch]$RemoveFiles
 )
 
 $ErrorActionPreference = "Stop"
@@ -21,10 +25,25 @@ if ($service) {
     Write-Host "$ServiceName is not installed"
 }
 
-$firewallRules = Get-NetFirewallRule -DisplayName "Telemon Exporter 9185*" -ErrorAction SilentlyContinue
-if ($firewallRules) {
-    $firewallRules | Remove-NetFirewallRule
-    Write-Host "Removed Telemon firewall rules"
+if ($PreserveFirewall) {
+    Write-Host "Preserved Telemon firewall rules"
+} else {
+    $firewallRules = Get-NetFirewallRule -DisplayName "Telemon Exporter 9185*" -ErrorAction SilentlyContinue
+    if ($firewallRules) {
+        $firewallRules | Remove-NetFirewallRule
+        Write-Host "Removed Telemon firewall rules"
+    }
 }
 
-Write-Host "Preserved C:\ProgramData\Telemon\exporter.yml"
+if ($RemoveFiles) {
+    if (Test-Path $InstallDir) {
+        Remove-Item -Recurse -Force $InstallDir
+        Write-Host "Removed $InstallDir"
+    }
+    if (Test-Path $ConfigDir) {
+        Remove-Item -Recurse -Force $ConfigDir
+        Write-Host "Removed $ConfigDir"
+    }
+} else {
+    Write-Host "Preserved $ConfigDir\exporter.yml"
+}
