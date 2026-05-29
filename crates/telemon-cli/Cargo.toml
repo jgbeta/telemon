@@ -3,6 +3,10 @@ name = "telemon-cli"
 version.workspace = true
 edition.workspace = true
 
+[features]
+default = []
+macos-macmon = ["telemon-exporter/macos-macmon"]
+
 [dependencies]
 anyhow.workspace = true
 clap.workspace = true

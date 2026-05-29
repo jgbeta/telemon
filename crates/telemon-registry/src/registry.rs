@@ -448,6 +448,7 @@ fn device_record_to_target_group(record: &DeviceRecord) -> PrometheusTargetGroup
     labels.insert("device_name".to_string(), record.device_name.clone());
     labels.insert("user_name".to_string(), record.user_name.clone());
     labels.insert("host".to_string(), record.device_name.clone());
+    labels.insert("target_host".to_string(), record.current_ip.clone());
     labels.insert("os".to_string(), record.os.clone());
     labels.insert("os_version".to_string(), record.os_version.clone());
     labels.insert("arch".to_string(), record.arch.clone());
@@ -637,6 +638,10 @@ mod tests {
             Some("workstation")
         );
         assert_eq!(
+            group.labels.get("target_host").map(String::as_str),
+            Some("203.0.113.76")
+        );
+        assert_eq!(
             group.labels.get("machine_uuid").map(String::as_str),
             Some("machine")
         );
@@ -654,6 +659,10 @@ mod tests {
         assert_eq!(record.observed_ip, "198.51.100.1");
         assert_eq!(record.current_ip, "203.0.113.76");
         assert_eq!(group.targets, vec!["203.0.113.76:9185"]);
+        assert_eq!(
+            group.labels.get("target_host").map(String::as_str),
+            Some("203.0.113.76")
+        );
     }
 
     #[test]

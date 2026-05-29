@@ -11,11 +11,14 @@ PF_ANCHOR="/etc/pf.anchors/com.telemon.exporter"
 PF_CONF="/etc/pf.conf"
 PF_MARKER_BEGIN="# BEGIN telemon exporter"
 PF_MARKER_END="# END telemon exporter"
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+DEFAULT_CONFIG="$SCRIPT_DIR/config.default.yml"
 PROMETHEUS_SERVER_IP=""
 REGISTRY_SERVER=""
 ENROLLMENT_TOKEN=""
 USER_NAME=""
-DEVICE_NAME="${HOSTNAME:-}"
+DEVICE_NAME=""
+DEVICE_NAME_PROVIDED=false
 ADVERTISED_ADDR="${TELEMON_ADVERTISED_ADDR:-}"
 MACHINE_UUID="${TELEMON_MACHINE_UUID:-}"
 SOURCE_BINARY="target/release/telemon-exporter"
@@ -28,7 +31,7 @@ Options:
   --registry-server HOST:PORT      Registry server used for UUID enrollment.
   --enrollment-token TOKEN         Shared registry enrollment token.
   --user-name NAME                 Human user label for this device.
-  --device-name NAME               Human device label; defaults to hostname.
+  --device-name NAME               Human device label; defaults to short local hostname.
   --advertised-addr HOST_OR_IP     Scrape host/IP published to Prometheus SD.
   --machine-uuid UUID              Physical machine UUID shared by multi-OS installs.
   --prometheus-server-ip IP        Source allowed to scrape TCP 9185.
@@ -78,6 +81,7 @@ while [ "$#" -gt 0 ]; do
         exit 1
       fi
       DEVICE_NAME="$2"
+      DEVICE_NAME_PROVIDED=true
       shift 2
       ;;
     --advertised-addr)
@@ -128,6 +132,11 @@ if [ ! -x "$SOURCE_BINARY" ]; then
   exit 1
 fi
 
+if [ ! -f "$DEFAULT_CONFIG" ]; then
+  echo "missing default config $DEFAULT_CONFIG" >&2
+  exit 1
+fi
+
 verify_launchdaemon_binary() {
   local expected="$INSTALL_DIR/telemon-exporter"
 
@@ -170,7 +179,33 @@ PFCONF
   pfctl -E >/dev/null 2>&1 || true
 }
 
+short_device_name_default() {
+  local value
+
+  value="$(scutil --get LocalHostName 2>/dev/null || true)"
+  if [ -n "$value" ]; then
+    printf '%s\n' "$value"
+    return
+  fi
+
+  value="$(hostname -s 2>/dev/null || true)"
+  if [ -n "$value" ]; then
+    printf '%s\n' "$value"
+    return
+  fi
+
+  value="$(hostname 2>/dev/null || true)"
+  if [ -n "$value" ]; then
+    printf '%s\n' "${value%%.*}"
+    return
+  fi
+
+  printf '%s\n' "mac"
+}
+
 prompt_registration_config() {
+  local default_device_name
+
   if [ -z "$REGISTRY_SERVER" ] && [ -t 0 ]; then
     read -r -p "Registry server HOST:PORT (blank to disable registration): " REGISTRY_SERVER
   fi
@@ -187,12 +222,18 @@ prompt_registration_config() {
   if [ -z "$USER_NAME" ] && [ -t 0 ]; then
     read -r -p "User name label: " USER_NAME
   fi
-  if [ -z "$DEVICE_NAME" ] && [ -t 0 ]; then
-    read -r -p "Device name label [$HOSTNAME]: " DEVICE_NAME
-    DEVICE_NAME="${DEVICE_NAME:-${HOSTNAME:-unknown-device}}"
+  default_device_name="$(short_device_name_default)"
+  if [ "$DEVICE_NAME_PROVIDED" = "false" ] && [ -t 0 ]; then
+    read -r -p "Device name label [$default_device_name]: " DEVICE_NAME
+    DEVICE_NAME="${DEVICE_NAME:-$default_device_name}"
+  elif [ -z "$DEVICE_NAME" ]; then
+    DEVICE_NAME="$default_device_name"
   fi
   if [ -z "$ADVERTISED_ADDR" ] && [ -t 0 ]; then
-    read -r -p "Advertised scrape host/IP (blank to let registry observe): " ADVERTISED_ADDR
+    echo "Advertised scrape host/IP controls the Prometheus scrape target."
+    echo "Leave it blank to let the registry use the observed LAN source IP."
+    echo "Use Tailscale or another overlay address only if you deliberately want Prometheus to scrape through it."
+    read -r -p "Advertised scrape host/IP [blank recommended]: " ADVERTISED_ADDR
   fi
   if [ -z "$MACHINE_UUID" ] && [ -t 0 ]; then
     read -r -p "Machine UUID (blank for auto-generated local machine UUID): " MACHINE_UUID
@@ -340,57 +381,13 @@ install -m 0755 "$SOURCE_BINARY" "$INSTALL_DIR/telemon-exporter"
 prompt_registration_config
 
 if [ ! -f "$CONFIG_FILE" ]; then
-  cat > "$CONFIG_FILE" <<'CONFIG'
-server:
-  listen: "0.0.0.0:9185"
-  metrics_path: "/metrics"
-
-identity:
-  user_name: ""
-  device_name: ""
-  machine_uuid: ""
-  machine_uuid_file: ""
-
-registration:
-  enabled: false
-  registry_addr: ""
-  enrollment_token: ""
-  device_id_file: ""
-  heartbeat_interval_seconds: 30
-  scrape_port: 9185
-  advertised_addr: ""
-
-collection:
-  scrape_cache_stale_after_seconds: 60
-  temperature_interval_seconds: 15
-  sensor_rescan_interval_seconds: 300
-  gpu_interval_seconds: 15
-
-collectors:
-  linux_hwmon:
-    enabled: false
-    root: "/sys/class/hwmon"
-    include_unknown_sensors: false
-    nvme_enrichment_enabled: true
-    expose_storage_model: true
-    sensor_allowlist: []
-    sensor_denylist: []
-  nvidia_nvml:
-    enabled: true
-    library_paths: []
-    expose_gpu_name: true
-    expose_gpu_uuid: false
-    fan_speed_enabled: true
-
-logging:
-  level: "info"
-CONFIG
+  install -m 0644 "$DEFAULT_CONFIG" "$CONFIG_FILE"
   chmod 0644 "$CONFIG_FILE"
 fi
 ensure_registration_config_shape
 configure_registration_config
 
-install -m 0644 "packaging/macos/com.telemon.exporter.plist" "$PLIST"
+install -m 0644 "$SCRIPT_DIR/com.telemon.exporter.plist" "$PLIST"
 chown root:wheel "$PLIST"
 chmod 0644 "$PLIST"
 verify_launchdaemon_binary

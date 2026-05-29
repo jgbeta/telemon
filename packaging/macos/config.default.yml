@@ -1,5 +1,4 @@
 server:
-  #listen: "127.0.0.1:9185"
   listen: "0.0.0.0:9185"
   metrics_path: "/metrics"
   static_metrics_path: "/metrics/static"
@@ -31,8 +30,6 @@ collection:
   static_info_interval_seconds: 300
 
 adaptive_sampling:
-  # Device-level only: each /metrics scrape still includes all enabled dynamic sensors.
-  # Prefer future downsampling/retention policy for long-term storage optimization.
   enabled: true
   levels:
     normal_seconds: 15
@@ -70,7 +67,7 @@ collectors:
     enabled: false
 
   linux_hwmon:
-    enabled: true
+    enabled: false
     root: "/sys/class/hwmon"
     include_unknown_sensors: false
     nvme_enrichment_enabled: true
@@ -79,7 +76,7 @@ collectors:
     sensor_denylist: []
 
   nvidia_nvml:
-    enabled: true
+    enabled: false
     library_paths: []
     expose_gpu_name: true
     expose_gpu_uuid: false
@@ -90,10 +87,7 @@ collectors:
     include_removable_drives: false
     include_remote_drives: false
     network_interface_allowlist: []
-    network_interface_denylist:
-      - "loopback"
-      - "isatap"
-      - "teredo"
+    network_interface_denylist: []
 
   windows_inventory:
     enabled: false

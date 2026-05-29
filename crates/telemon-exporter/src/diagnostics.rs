@@ -3,6 +3,10 @@ use std::time::Duration;
 use crate::registration::DeviceInfoCollector;
 use crate::scheduler::{collect_snapshot_once, ScheduledCollector};
 use telemon_collectors::gpu::nvidia::collector::NvidiaNvmlCollector;
+use telemon_collectors::macos::exact_temperature_experimental::MacosExactTemperatureExperimentalCollector;
+use telemon_collectors::macos::macmon::MacosMacmonCollector;
+use telemon_collectors::macos::thermal_state::MacosThermalStateCollector;
+use telemon_collectors::system::collector::SystemCollector;
 use telemon_collectors::temperature::linux_hwmon::LinuxHwmonCollector;
 use telemon_collectors::windows::baseline::WindowsBaselineCollector;
 use telemon_collectors::windows::inventory::WindowsInventoryCollector;
@@ -28,6 +32,47 @@ pub fn build_info_metric() -> MetricSample {
 
 pub fn build_scheduled_collectors(config: &AppConfig) -> Vec<ScheduledCollector> {
     let mut collectors = Vec::new();
+
+    if config.collectors.system.enabled {
+        collectors.push(ScheduledCollector::new(
+            Box::new(SystemCollector::new(config.collectors.system.clone())),
+            Duration::from_secs(config.collection.system_interval_seconds),
+        ));
+    }
+
+    if config.collectors.macos_thermal_state.enabled {
+        collectors.push(ScheduledCollector::new(
+            Box::new(MacosThermalStateCollector::new(
+                config.collectors.macos_thermal_state.clone(),
+            )),
+            Duration::from_secs(config.collection.macos_thermal_state_interval_seconds),
+        ));
+    }
+
+    if config.collectors.macos_macmon.enabled {
+        collectors.push(ScheduledCollector::new(
+            Box::new(MacosMacmonCollector::new(
+                config.collectors.macos_macmon.clone(),
+            )),
+            Duration::from_secs(config.collectors.macos_macmon.sample_interval_seconds),
+        ));
+    }
+
+    if config
+        .collectors
+        .macos_exact_temperature_experimental
+        .enabled
+    {
+        collectors.push(ScheduledCollector::new(
+            Box::new(MacosExactTemperatureExperimentalCollector::new(
+                config
+                    .collectors
+                    .macos_exact_temperature_experimental
+                    .clone(),
+            )),
+            Duration::from_secs(config.collection.macos_thermal_state_interval_seconds),
+        ));
+    }
 
     if config.collectors.linux_hwmon.enabled {
         collectors.push(
@@ -111,6 +156,22 @@ pub fn check_report(config: &AppConfig) -> String {
     report.push_str(&format!("listen: {}\n", config.server.listen));
     report.push_str("enabled collectors:\n");
 
+    if config.collectors.system.enabled {
+        report.push_str("- system\n");
+    }
+    if config.collectors.macos_thermal_state.enabled {
+        report.push_str("- macos_thermal_state\n");
+    }
+    if config.collectors.macos_macmon.enabled {
+        report.push_str("- macos_macmon\n");
+    }
+    if config
+        .collectors
+        .macos_exact_temperature_experimental
+        .enabled
+    {
+        report.push_str("- macos_exact_temperature_experimental\n");
+    }
     if config.collectors.linux_hwmon.enabled {
         report.push_str("- linux_hwmon\n");
     }
@@ -133,6 +194,13 @@ pub fn check_report(config: &AppConfig) -> String {
         report.push_str("- identity\n");
     }
     if !config.collectors.linux_hwmon.enabled
+        && !config.collectors.system.enabled
+        && !config.collectors.macos_thermal_state.enabled
+        && !config.collectors.macos_macmon.enabled
+        && !config
+            .collectors
+            .macos_exact_temperature_experimental
+            .enabled
         && !config.collectors.nvidia_nvml.enabled
         && !config.collectors.windows_baseline.enabled
         && !config.collectors.windows_lhm_http.enabled
@@ -155,6 +223,45 @@ pub fn print_metrics(config: &AppConfig) -> String {
 pub fn discover_report(config: &AppConfig) -> String {
     let mut report = String::new();
     report.push_str("collectors:\n");
+    let system_state = SystemCollector::discover_summary(&config.collectors.system);
+    report.push_str(&format!(
+        "- system: {}, enabled={}, cpu_enabled={}, memory_enabled={}, uptime_enabled={}\n",
+        system_state,
+        config.collectors.system.enabled,
+        config.collectors.system.cpu_enabled,
+        config.collectors.system.memory_enabled,
+        config.collectors.system.uptime_enabled
+    ));
+
+    let macos_thermal_state =
+        MacosThermalStateCollector::discover_summary(&config.collectors.macos_thermal_state);
+    report.push_str(&format!(
+        "- macos_thermal_state: {}, enabled={}\n",
+        macos_thermal_state, config.collectors.macos_thermal_state.enabled
+    ));
+
+    let macos_macmon = MacosMacmonCollector::discover_summary(&config.collectors.macos_macmon);
+    report.push_str(&format!(
+        "- macos_macmon: {}, enabled={}, sample_interval_seconds={}, sample_window_milliseconds={}, stale_after_seconds={}\n",
+        macos_macmon,
+        config.collectors.macos_macmon.enabled,
+        config.collectors.macos_macmon.sample_interval_seconds,
+        config.collectors.macos_macmon.sample_window_milliseconds,
+        config.collectors.macos_macmon.stale_after_seconds
+    ));
+
+    let macos_exact_temperature = MacosExactTemperatureExperimentalCollector::discover_summary(
+        &config.collectors.macos_exact_temperature_experimental,
+    );
+    report.push_str(&format!(
+        "- macos_exact_temperature_experimental: {}, enabled={}\n",
+        macos_exact_temperature,
+        config
+            .collectors
+            .macos_exact_temperature_experimental
+            .enabled
+    ));
+
     let linux_state = LinuxHwmonCollector::discover_summary(&config.collectors.linux_hwmon);
     report.push_str(&format!(
         "- linux_hwmon: {}, enabled={}, root={}, include_unknown_sensors={}\n",

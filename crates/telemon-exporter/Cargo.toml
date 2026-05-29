@@ -3,8 +3,13 @@ name = "telemon-exporter"
 version.workspace = true
 edition.workspace = true
 
+[features]
+default = []
+macos-macmon = ["telemon-collectors/macos-macmon"]
+
 [dependencies]
 anyhow.workspace = true
+chrono.workspace = true
 clap.workspace = true
 serde.workspace = true
 serde_json.workspace = true

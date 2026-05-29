@@ -233,18 +233,25 @@ fn is_static_metric(metric: &MetricSample) -> bool {
     if name == names::COLLECTOR_SUPPORTED
         || name == names::CPU_INFO
         || name == names::COMPUTER_SYSTEM_INFO
-        || name == names::GPU_INFO
         || name == names::GPU_POWER_LIMIT_WATTS
+        || name == names::HARDWARE_CLOCK_AVAILABLE_HERTZ
+        || name == names::HARDWARE_CPU_CLUSTER_CORES
+        || name == names::HARDWARE_DEVICE_INFO
+        || name == names::HARDWARE_GPU_CORES
         || name == names::HARDWARE_SENSOR_INFO
-        || name == names::STORAGE_DEVICE_INFO
         || name == names::STORAGE_NAMESPACE_CAPACITY_BYTES
+        || name == names::SYSTEM_CPU_COUNT
+        || name == names::SYSTEM_OS_INFO
         || name == names::TEMPERATURE_LIMIT_CELSIUS
-        || name == names::WINDOWS_OS_INFO
     {
         return true;
     }
 
     if name == names::MEMORY_TOTAL_BYTES {
+        return metric.labels.get("state").map(String::as_str) == Some("total");
+    }
+
+    if name == names::SYSTEM_SWAP_BYTES {
         return metric.labels.get("state").map(String::as_str) == Some("total");
     }
 
@@ -387,6 +394,39 @@ mod tests {
         assert!(is_static_metric(&filesystem_size));
         assert!(!is_static_metric(&memory_available));
         assert!(!is_static_metric(&filesystem_free));
+    }
+
+    #[test]
+    fn system_memory_total_and_cpu_count_are_static() {
+        let memory_total = MetricSample::gauge(
+            telemon_core::metrics::names::MEMORY_TOTAL_BYTES,
+            "memory total",
+            telemon_core::metrics::model::labels(&[("state", "total")]),
+            16.0,
+        );
+        let memory_available = MetricSample::gauge(
+            telemon_core::metrics::names::MEMORY_AVAILABLE_BYTES,
+            "memory available",
+            telemon_core::metrics::model::labels(&[("state", "available")]),
+            6.0,
+        );
+        let cpu_count = MetricSample::gauge(
+            telemon_core::metrics::names::SYSTEM_CPU_COUNT,
+            "cpu count",
+            telemon_core::metrics::model::labels(&[]),
+            10.0,
+        );
+        let uptime = MetricSample::gauge(
+            telemon_core::metrics::names::UPTIME_SECONDS,
+            "uptime",
+            telemon_core::metrics::model::labels(&[]),
+            12_345.0,
+        );
+
+        assert!(is_static_metric(&memory_total));
+        assert!(is_static_metric(&cpu_count));
+        assert!(!is_static_metric(&memory_available));
+        assert!(!is_static_metric(&uptime));
     }
 
     #[test]

@@ -66,6 +66,8 @@ pub struct RegistryConfig {
 #[serde(default)]
 pub struct CollectionConfig {
     pub scrape_cache_stale_after_seconds: u64,
+    pub system_interval_seconds: u64,
+    pub macos_thermal_state_interval_seconds: u64,
     pub temperature_interval_seconds: u64,
     pub sensor_rescan_interval_seconds: u64,
     pub gpu_interval_seconds: u64,
@@ -104,12 +106,50 @@ pub struct AdaptiveTemperatureConfig {
 #[derive(Debug, Clone, Default, Serialize, Deserialize)]
 #[serde(default)]
 pub struct CollectorsConfig {
+    pub system: SystemConfig,
+    pub macos_thermal_state: MacosThermalStateConfig,
+    pub macos_macmon: MacosMacmonConfig,
+    pub macos_exact_temperature_experimental: MacosExactTemperatureExperimentalConfig,
     pub linux_hwmon: LinuxHwmonConfig,
     pub nvidia_nvml: NvidiaNvmlConfig,
     pub windows_baseline: WindowsBaselineConfig,
     pub windows_inventory: WindowsInventoryConfig,
     pub windows_lhm_http: WindowsLhmHttpConfig,
     pub windows_lhm_wmi: WindowsLhmWmiConfig,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(default)]
+pub struct SystemConfig {
+    pub enabled: bool,
+    pub cpu_enabled: bool,
+    pub memory_enabled: bool,
+    pub uptime_enabled: bool,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(default)]
+pub struct MacosThermalStateConfig {
+    pub enabled: bool,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(default)]
+pub struct MacosMacmonConfig {
+    pub enabled: bool,
+    pub sample_interval_seconds: u64,
+    pub sample_window_milliseconds: u64,
+    pub stale_after_seconds: u64,
+    pub reinitialize_after_consecutive_errors: u64,
+    pub min_temperature_celsius: f64,
+    pub max_temperature_celsius: f64,
+    pub max_power_watts: f64,
+}
+
+#[derive(Debug, Clone, Default, Serialize, Deserialize)]
+#[serde(default)]
+pub struct MacosExactTemperatureExperimentalConfig {
+    pub enabled: bool,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -228,6 +268,14 @@ impl AppConfig {
             "collection.scrape_cache_stale_after_seconds",
         )?;
         validate_positive(
+            self.collection.system_interval_seconds,
+            "collection.system_interval_seconds",
+        )?;
+        validate_positive(
+            self.collection.macos_thermal_state_interval_seconds,
+            "collection.macos_thermal_state_interval_seconds",
+        )?;
+        validate_positive(
             self.collection.temperature_interval_seconds,
             "collection.temperature_interval_seconds",
         )?;
@@ -306,6 +354,49 @@ impl AppConfig {
             && self.collectors.windows_lhm_wmi.namespace.trim().is_empty()
         {
             bail!("collectors.windows_lhm_wmi.namespace must not be empty when enabled");
+        }
+        validate_positive(
+            self.collectors.macos_macmon.sample_interval_seconds,
+            "collectors.macos_macmon.sample_interval_seconds",
+        )?;
+        validate_positive(
+            self.collectors.macos_macmon.sample_window_milliseconds,
+            "collectors.macos_macmon.sample_window_milliseconds",
+        )?;
+        if self.collectors.macos_macmon.sample_window_milliseconds > u64::from(u32::MAX) {
+            bail!("collectors.macos_macmon.sample_window_milliseconds must fit in u32");
+        }
+        validate_positive(
+            self.collectors.macos_macmon.stale_after_seconds,
+            "collectors.macos_macmon.stale_after_seconds",
+        )?;
+        validate_positive(
+            self.collectors
+                .macos_macmon
+                .reinitialize_after_consecutive_errors,
+            "collectors.macos_macmon.reinitialize_after_consecutive_errors",
+        )?;
+        if !self
+            .collectors
+            .macos_macmon
+            .min_temperature_celsius
+            .is_finite()
+            || !self
+                .collectors
+                .macos_macmon
+                .max_temperature_celsius
+                .is_finite()
+            || self.collectors.macos_macmon.min_temperature_celsius
+                >= self.collectors.macos_macmon.max_temperature_celsius
+        {
+            bail!(
+                "collectors.macos_macmon temperature bounds must be finite and increase min < max"
+            );
+        }
+        if !self.collectors.macos_macmon.max_power_watts.is_finite()
+            || self.collectors.macos_macmon.max_power_watts <= 0.0
+        {
+            bail!("collectors.macos_macmon.max_power_watts must be finite and greater than 0");
         }
 
         match self.logging.level.as_str() {
@@ -424,6 +515,8 @@ impl Default for CollectionConfig {
     fn default() -> Self {
         Self {
             scrape_cache_stale_after_seconds: 60,
+            system_interval_seconds: 15,
+            macos_thermal_state_interval_seconds: 15,
             temperature_interval_seconds: 15,
             sensor_rescan_interval_seconds: 300,
             gpu_interval_seconds: 15,
@@ -463,6 +556,44 @@ impl Default for AdaptiveTemperatureConfig {
             warm_celsius: 60.0,
             hot_celsius: 75.0,
             critical_celsius: 85.0,
+        }
+    }
+}
+
+impl Default for SystemConfig {
+    fn default() -> Self {
+        Self {
+            enabled: true,
+            cpu_enabled: true,
+            memory_enabled: true,
+            uptime_enabled: true,
+        }
+    }
+}
+
+impl Default for MacosThermalStateConfig {
+    fn default() -> Self {
+        Self {
+            enabled: default_macos_thermal_state_enabled(),
+        }
+    }
+}
+
+fn default_macos_thermal_state_enabled() -> bool {
+    cfg!(target_os = "macos")
+}
+
+impl Default for MacosMacmonConfig {
+    fn default() -> Self {
+        Self {
+            enabled: false,
+            sample_interval_seconds: 1,
+            sample_window_milliseconds: 1000,
+            stale_after_seconds: 5,
+            reinitialize_after_consecutive_errors: 5,
+            min_temperature_celsius: 1.0,
+            max_temperature_celsius: 130.0,
+            max_power_watts: 300.0,
         }
     }
 }
@@ -685,6 +816,89 @@ mod tests {
         );
         assert!(!config.collectors.windows_baseline.include_removable_drives);
         assert!(!config.collectors.windows_baseline.include_remote_drives);
+    }
+
+    #[test]
+    fn defaults_system_collector_config() {
+        let config = AppConfig::default();
+
+        assert_eq!(config.collection.system_interval_seconds, 15);
+        assert!(config.collectors.system.enabled);
+        assert!(config.collectors.system.cpu_enabled);
+        assert!(config.collectors.system.memory_enabled);
+        assert!(config.collectors.system.uptime_enabled);
+    }
+
+    #[test]
+    fn defaults_macos_collector_config() {
+        let config = AppConfig::default();
+
+        assert_eq!(config.collection.macos_thermal_state_interval_seconds, 15);
+        assert_eq!(
+            config.collectors.macos_thermal_state.enabled,
+            cfg!(target_os = "macos")
+        );
+        assert!(!config.collectors.macos_macmon.enabled);
+        assert_eq!(config.collectors.macos_macmon.sample_interval_seconds, 1);
+        assert_eq!(
+            config.collectors.macos_macmon.sample_window_milliseconds,
+            1000
+        );
+        assert_eq!(config.collectors.macos_macmon.stale_after_seconds, 5);
+        assert_eq!(
+            config
+                .collectors
+                .macos_macmon
+                .reinitialize_after_consecutive_errors,
+            5
+        );
+        assert!(
+            !config
+                .collectors
+                .macos_exact_temperature_experimental
+                .enabled
+        );
+    }
+
+    #[test]
+    fn rejects_zero_system_interval() {
+        let mut config = AppConfig::default();
+        config.collection.system_interval_seconds = 0;
+
+        assert!(config.validate().is_err());
+    }
+
+    #[test]
+    fn rejects_zero_macos_thermal_interval() {
+        let mut config = AppConfig::default();
+        config.collection.macos_thermal_state_interval_seconds = 0;
+
+        assert!(config.validate().is_err());
+    }
+
+    #[test]
+    fn rejects_zero_macos_macmon_sample_interval() {
+        let mut config = AppConfig::default();
+        config.collectors.macos_macmon.sample_interval_seconds = 0;
+
+        assert!(config.validate().is_err());
+    }
+
+    #[test]
+    fn rejects_invalid_macos_macmon_temperature_bounds() {
+        let mut config = AppConfig::default();
+        config.collectors.macos_macmon.min_temperature_celsius = 130.0;
+        config.collectors.macos_macmon.max_temperature_celsius = 1.0;
+
+        assert!(config.validate().is_err());
+    }
+
+    #[test]
+    fn rejects_invalid_macos_macmon_power_bound() {
+        let mut config = AppConfig::default();
+        config.collectors.macos_macmon.max_power_watts = 0.0;
+
+        assert!(config.validate().is_err());
     }
 
     #[test]

@@ -147,7 +147,7 @@ impl LinuxHwmonCollector {
     }
 
     pub fn discover_summary(config: &LinuxHwmonConfig) -> String {
-        if !cfg!(target_os = "linux") {
+        if !cfg!(target_os = "linux") && is_default_hwmon_root(&config.root) {
             return "unsupported on this OS".to_string();
         }
 
@@ -172,7 +172,7 @@ impl Collector for LinuxHwmonCollector {
     fn collect(&mut self) -> CollectorResult {
         let started_at = Instant::now();
 
-        if !cfg!(target_os = "linux") {
+        if !cfg!(target_os = "linux") && is_default_hwmon_root(&self.config.root) {
             self.errors_total += 1;
             return CollectorResult {
                 collector: self.name(),
@@ -218,6 +218,10 @@ impl Collector for LinuxHwmonCollector {
             }
         }
     }
+}
+
+fn is_default_hwmon_root(path: &Path) -> bool {
+    path == Path::new("/sys/class/hwmon")
 }
 
 pub fn discover_readings(config: &LinuxHwmonConfig) -> Result<Vec<TemperatureReading>> {

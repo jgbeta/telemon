@@ -7,6 +7,7 @@ use tokio::sync::watch;
 use tracing::{debug, info};
 
 use crate::cache::SharedMetricCache;
+use crate::macmon_json;
 use telemon_core::config::AppConfig;
 use telemon_core::metrics::encode;
 
@@ -115,6 +116,19 @@ async fn handle_connection(mut stream: TcpStream, state: Arc<HttpState>) -> Resu
             &metrics,
         )
         .await?;
+    } else if path == "/json" {
+        let dynamic_samples = state
+            .dynamic_cache
+            .read()
+            .map(|cache| cache.snapshot())
+            .unwrap_or_default();
+        let static_samples = state
+            .static_cache
+            .read()
+            .map(|cache| cache.snapshot())
+            .unwrap_or_default();
+        let body = macmon_json::encode_snapshot(&dynamic_samples, &static_samples);
+        write_response(&mut stream, 200, "application/json; charset=utf-8", &body).await?;
     } else if path == "/healthz" {
         write_response(&mut stream, 200, "text/plain; charset=utf-8", "ok\n").await?;
     } else if path == "/readyz" {
@@ -133,7 +147,7 @@ async fn handle_connection(mut stream: TcpStream, state: Arc<HttpState>) -> Resu
             &mut stream,
             200,
             "text/plain; charset=utf-8",
-            "telemon-exporter\nendpoints: /metrics /metrics/static /healthz /readyz\n",
+            "telemon-exporter\nendpoints: /metrics /metrics/static /json /healthz /readyz\n",
         )
         .await?;
     } else {

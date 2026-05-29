@@ -4,6 +4,7 @@ pub mod cli;
 pub mod diagnostics;
 pub mod hardware_inspect;
 pub mod http;
+pub mod macmon_json;
 pub mod registration;
 pub mod runtime;
 pub mod scheduler;

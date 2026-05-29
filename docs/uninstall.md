@@ -259,8 +259,9 @@ The service lookup should return nothing and the port test should fail.
 
 ## macOS
 
-macOS support is currently a LaunchDaemon skeleton. Thermal collection is still
-deferred to a later phase.
+macOS support uses a LaunchDaemon with baseline system telemetry and public
+thermal pressure state. Exact CPU/GPU sensor temperatures are not guaranteed and
+remain experimental.
 
 Uninstall the LaunchDaemon and Telemon-managed `pf` rule:
 
@@ -285,6 +286,9 @@ For a full local reset:
 ```bash
 sudo packaging/macos/uninstall.sh --remove-files
 ```
+
+For repeated macOS install and LaunchDaemon tests, see
+`macos-test-cleanup.md`.
 
 Validate removal:
 

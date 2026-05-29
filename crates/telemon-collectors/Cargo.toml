@@ -3,14 +3,23 @@ name = "telemon-collectors"
 version.workspace = true
 edition.workspace = true
 
+[features]
+default = []
+macos-macmon = ["dep:macmon"]
+
 [dependencies]
 anyhow.workspace = true
+libc.workspace = true
 libloading.workspace = true
 serde.workspace = true
 serde_json.workspace = true
 telemon-core.workspace = true
 thiserror.workspace = true
 tracing.workspace = true
+
+[target.'cfg(all(target_os = "macos", target_arch = "aarch64"))'.dependencies]
+macmon = { package = "telemon-macmon", path = "../../vendor/macmon-lite", optional = true }
+
 [target.'cfg(windows)'.dependencies]
 windows-sys = { workspace = true, features = [
   "Win32_Foundation",
