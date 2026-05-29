@@ -70,7 +70,15 @@ MANIFEST
       } >> "$bundle_dir/MANIFEST.txt"
       if [ "$OS" = "linux" ]; then
         install -m 0755 "install.sh" "$bundle_dir/install.sh"
-        echo "  install.sh" >> "$bundle_dir/MANIFEST.txt"
+        install -m 0755 "scripts/install-steamdeck.sh" "$bundle_dir/install-steamdeck.sh"
+        install -m 0644 "docs/steamdeck-install.md" "$bundle_dir/README.steamdeck.md"
+        install -m 0644 "packaging/steamdeck/telemon-exporter.service.template" "$bundle_dir/telemon-exporter.steamdeck.service.template"
+        {
+          echo "  install.sh"
+          echo "  install-steamdeck.sh"
+          echo "  README.steamdeck.md"
+          echo "  telemon-exporter.steamdeck.service.template"
+        } >> "$bundle_dir/MANIFEST.txt"
       fi
       ;;
     telemon-registry)

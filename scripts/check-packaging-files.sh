@@ -3,6 +3,7 @@ set -euo pipefail
 
 required_files=(
   "install.sh"
+  "scripts/install-steamdeck.sh"
   "scripts/build-release.sh"
   "scripts/package-all-local.sh"
   "packaging/README.md"
@@ -21,10 +22,12 @@ required_files=(
   "packaging/macos/install.sh"
   "packaging/macos/uninstall.sh"
   "packaging/macos/service-smoke-test.sh"
+  "packaging/steamdeck/telemon-exporter.service.template"
   "docs/install-bootstrap.md"
   "docs/install-linux.md"
   "docs/install-windows.md"
   "docs/install-macos.md"
+  "docs/steamdeck-install.md"
   "deploy/docker-compose.yml"
   "deploy/docker-compose.local-build.yml"
   "deploy/prometheus/prometheus.yml"
@@ -53,6 +56,7 @@ done
 bash -n scripts/build-release.sh
 bash -n scripts/package-all-local.sh
 bash -n scripts/check-packaging-files.sh
+bash -n scripts/install-steamdeck.sh
 bash -n install.sh
 bash -n packaging/linux/install.sh
 bash -n packaging/linux/uninstall.sh
@@ -76,6 +80,14 @@ if [ -d "dist/current" ]; then
       --enrollment-token test-token \
       --user-name test-user \
       --device-name test-device >/dev/null
+
+    bash scripts/install-steamdeck.sh \
+      --dry-run \
+      --artifact "$artifact" \
+      --registry-server registry.example.local:9186 \
+      --enrollment-token test-token \
+      --user-name test-user \
+      --device-name steam-deck >/dev/null
   fi
 fi
 

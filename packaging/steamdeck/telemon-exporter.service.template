@@ -1,0 +1,15 @@
+[Unit]
+Description=Telemon exporter for Steam Deck
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+ExecStart=%h/.local/bin/telemon-exporter run --config %h/.config/telemon/exporter.yml
+Restart=always
+RestartSec=5
+WorkingDirectory=%h
+Environment=RUST_LOG=info
+
+[Install]
+WantedBy=default.target
