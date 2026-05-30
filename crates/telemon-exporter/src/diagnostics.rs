@@ -343,13 +343,25 @@ pub fn discover_report(config: &AppConfig) -> String {
 
     let game_state = inspect_steam_deck_game_state(&config.collectors.steam_deck_game_state);
     report.push_str(&format!(
-        "- steam_deck_game_state: enabled={}, supported={}, state={}, display={}, poll_interval_seconds={}, stop_debounce_seconds={}\n",
+        "- steam_deck_game_state: enabled={}, supported={}, state={}, display={}, poll_interval_seconds={}, stop_debounce_seconds={}, auto_discover_steam_display={}, desktop_fallback_enabled={}, process_fallback_enabled={}\n",
         game_state.enabled,
         game_state.supported,
         game_state.state.as_str(),
         game_state.display,
         config.collectors.steam_deck_game_state.poll_interval_seconds,
-        config.collectors.steam_deck_game_state.stop_debounce_seconds
+        config.collectors.steam_deck_game_state.stop_debounce_seconds,
+        config
+            .collectors
+            .steam_deck_game_state
+            .auto_discover_steam_display,
+        config
+            .collectors
+            .steam_deck_game_state
+            .desktop_fallback_enabled,
+        config
+            .collectors
+            .steam_deck_game_state
+            .process_fallback_enabled
     ));
 
     let linux_drm_state = LinuxDrmCollector::discover_summary(&config.collectors.linux_drm);

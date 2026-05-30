@@ -102,6 +102,9 @@ collectors:
     stop_debounce_seconds: 5
     xprop_path: "xprop"
     display: ":0"
+    auto_discover_steam_display: true
+    desktop_fallback_enabled: true
+    process_fallback_enabled: true
 
   nvidia_nvml:
     enabled: true

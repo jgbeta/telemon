@@ -203,6 +203,9 @@ pub struct SteamDeckGameStateConfig {
     pub stop_debounce_seconds: u64,
     pub xprop_path: String,
     pub display: String,
+    pub auto_discover_steam_display: bool,
+    pub desktop_fallback_enabled: bool,
+    pub process_fallback_enabled: bool,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -724,6 +727,9 @@ impl Default for SteamDeckGameStateConfig {
             stop_debounce_seconds: 5,
             xprop_path: "xprop".to_string(),
             display: ":0".to_string(),
+            auto_discover_steam_display: true,
+            desktop_fallback_enabled: true,
+            process_fallback_enabled: true,
         }
     }
 }
@@ -941,6 +947,24 @@ mod tests {
                 .steam_deck_game_state
                 .stop_debounce_seconds,
             5
+        );
+        assert!(
+            config
+                .collectors
+                .steam_deck_game_state
+                .auto_discover_steam_display
+        );
+        assert!(
+            config
+                .collectors
+                .steam_deck_game_state
+                .desktop_fallback_enabled
+        );
+        assert!(
+            config
+                .collectors
+                .steam_deck_game_state
+                .process_fallback_enabled
         );
     }
 
