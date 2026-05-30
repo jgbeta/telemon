@@ -5,6 +5,7 @@ use telemon_collectors::gpu::nvidia::collector::{
 use telemon_collectors::linux::amdgpu::{
     inspect_hardware as inspect_linux_amdgpu, LinuxAmdgpuInspection,
 };
+use telemon_collectors::linux::drm::{inspect_hardware as inspect_linux_drm, LinuxDrmInspection};
 use telemon_collectors::linux::gamescope::{
     inspect_hardware as inspect_steam_deck_game_state, SteamDeckGameStateInspection,
 };
@@ -33,6 +34,7 @@ struct HardwareInspection {
     linux_hwmon: LinuxHwmonInspection,
     linux_power_supply: LinuxPowerSupplyInspection,
     linux_amdgpu: LinuxAmdgpuInspection,
+    linux_drm: LinuxDrmInspection,
     steam_deck_game_state: SteamDeckGameStateInspection,
     nvidia_nvml: NvidiaNvmlInspection,
     windows_baseline: WindowsBaselineInspection,
@@ -46,6 +48,7 @@ pub fn inspect_hardware_json(config: &AppConfig) -> anyhow::Result<String> {
         linux_hwmon: inspect_linux_hwmon(&config.collectors.linux_hwmon)?,
         linux_power_supply: inspect_linux_power_supply(&config.collectors.linux_power_supply),
         linux_amdgpu: inspect_linux_amdgpu(&config.collectors.linux_amdgpu),
+        linux_drm: inspect_linux_drm(&config.collectors.linux_drm),
         steam_deck_game_state: inspect_steam_deck_game_state(
             &config.collectors.steam_deck_game_state,
         ),

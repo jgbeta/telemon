@@ -88,6 +88,14 @@ collectors:
     root: "/sys/class/drm"
     include_diagnostic_only_gpu_metrics: true
 
+  linux_drm:
+    enabled: false
+    drm_root: "/sys/class/drm"
+    proc_root: "/proc"
+    target_pid:
+    include_hwmon: true
+    include_fdinfo: false
+
   steam_deck_game_state:
     enabled: false
     poll_interval_seconds: 1

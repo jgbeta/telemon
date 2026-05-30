@@ -52,6 +52,11 @@ pub trait NvidiaProvider: Send + Sync {
         let _ = index;
         Ok(None)
     }
+
+    fn current_clocks_throttle_reasons(&mut self, index: u32) -> Result<Option<u64>, NvidiaError> {
+        let _ = index;
+        Ok(None)
+    }
 }
 
 #[derive(Debug, Clone, Error, PartialEq, Eq)]
@@ -249,6 +254,12 @@ impl NvidiaProvider for DynamicNvmlProvider {
     fn performance_state(&mut self, index: u32) -> Result<Option<u32>, NvidiaError> {
         self.api
             .device_performance_state(index)
+            .map_err(NvidiaError::from)
+    }
+
+    fn current_clocks_throttle_reasons(&mut self, index: u32) -> Result<Option<u64>, NvidiaError> {
+        self.api
+            .device_current_clocks_throttle_reasons(index)
             .map_err(NvidiaError::from)
     }
 }

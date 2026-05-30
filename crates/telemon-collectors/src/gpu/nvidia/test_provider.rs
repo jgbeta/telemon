@@ -13,6 +13,7 @@ pub struct TestNvidiaDevice {
     pub graphics_clock_mhz: Option<u32>,
     pub memory_clock_mhz: Option<u32>,
     pub performance_state: Option<u32>,
+    pub current_clocks_throttle_reasons: Option<u64>,
 }
 
 #[derive(Debug, Clone)]
@@ -54,6 +55,7 @@ impl TestNvidiaProvider {
             graphics_clock_mhz: Some(2_520),
             memory_clock_mhz: Some(10_501),
             performance_state: Some(0),
+            current_clocks_throttle_reasons: Some(0x60),
         }])
     }
 
@@ -114,6 +116,10 @@ impl NvidiaProvider for TestNvidiaProvider {
 
     fn performance_state(&mut self, index: u32) -> Result<Option<u32>, NvidiaError> {
         Ok(self.device(index)?.performance_state)
+    }
+
+    fn current_clocks_throttle_reasons(&mut self, index: u32) -> Result<Option<u64>, NvidiaError> {
+        Ok(self.device(index)?.current_clocks_throttle_reasons)
     }
 }
 

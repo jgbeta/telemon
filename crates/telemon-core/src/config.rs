@@ -113,6 +113,7 @@ pub struct CollectorsConfig {
     pub linux_hwmon: LinuxHwmonConfig,
     pub linux_power_supply: LinuxPowerSupplyConfig,
     pub linux_amdgpu: LinuxAmdgpuConfig,
+    pub linux_drm: LinuxDrmConfig,
     pub steam_deck_game_state: SteamDeckGameStateConfig,
     pub nvidia_nvml: NvidiaNvmlConfig,
     pub windows_baseline: WindowsBaselineConfig,
@@ -181,6 +182,17 @@ pub struct LinuxAmdgpuConfig {
     pub enabled: bool,
     pub root: PathBuf,
     pub include_diagnostic_only_gpu_metrics: bool,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(default)]
+pub struct LinuxDrmConfig {
+    pub enabled: bool,
+    pub drm_root: PathBuf,
+    pub proc_root: PathBuf,
+    pub target_pid: Option<u32>,
+    pub include_hwmon: bool,
+    pub include_fdinfo: bool,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -691,6 +703,19 @@ impl Default for LinuxAmdgpuConfig {
     }
 }
 
+impl Default for LinuxDrmConfig {
+    fn default() -> Self {
+        Self {
+            enabled: false,
+            drm_root: PathBuf::from("/sys/class/drm"),
+            proc_root: PathBuf::from("/proc"),
+            target_pid: None,
+            include_hwmon: true,
+            include_fdinfo: false,
+        }
+    }
+}
+
 impl Default for SteamDeckGameStateConfig {
     fn default() -> Self {
         Self {
@@ -891,6 +916,17 @@ mod tests {
                 .linux_amdgpu
                 .include_diagnostic_only_gpu_metrics
         );
+        assert!(!config.collectors.linux_drm.enabled);
+        assert_eq!(
+            config.collectors.linux_drm.drm_root,
+            PathBuf::from("/sys/class/drm")
+        );
+        assert_eq!(
+            config.collectors.linux_drm.proc_root,
+            PathBuf::from("/proc")
+        );
+        assert!(config.collectors.linux_drm.include_hwmon);
+        assert!(!config.collectors.linux_drm.include_fdinfo);
         assert!(!config.collectors.steam_deck_game_state.enabled);
         assert_eq!(
             config

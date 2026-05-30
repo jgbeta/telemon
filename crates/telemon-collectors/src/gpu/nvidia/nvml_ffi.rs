@@ -47,4 +47,6 @@ pub type NvmlDeviceGetClockInfo =
     unsafe extern "C" fn(NvmlDevice, c_uint, *mut c_uint) -> NvmlReturn;
 pub type NvmlDeviceGetPerformanceState =
     unsafe extern "C" fn(NvmlDevice, *mut c_uint) -> NvmlReturn;
+pub type NvmlDeviceGetCurrentClocksThrottleReasons =
+    unsafe extern "C" fn(NvmlDevice, *mut c_ulonglong) -> NvmlReturn;
 pub type NvmlErrorString = unsafe extern "C" fn(NvmlReturn) -> *const c_char;

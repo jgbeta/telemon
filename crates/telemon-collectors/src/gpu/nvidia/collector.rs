@@ -507,6 +507,12 @@ fn collect_gpu_metrics(
         Err(error) => record_partial_error(partial_errors, index, "performance_state", error),
     }
 
+    match provider.current_clocks_throttle_reasons(index) {
+        Ok(Some(reasons)) => metrics.extend(gpu_throttle_reason_metrics(index, reasons)),
+        Ok(None) => {}
+        Err(error) => record_partial_error(partial_errors, index, "throttle_reasons", error),
+    }
+
     if config.fan_speed_enabled {
         match provider.fan_speed_ratio(index) {
             Ok(Some(fan_speed)) => metrics.push(gpu_fan_speed_metric(index, fan_speed)),
@@ -723,6 +729,33 @@ fn gpu_performance_state_metric(index: u32, state: u32) -> MetricSample {
             ("source_driver", "nvml"),
         ]),
         state as f64,
+    )
+}
+
+fn gpu_throttle_reason_metrics(index: u32, reasons: u64) -> Vec<MetricSample> {
+    vec![
+        gpu_throttle_reason_metric(index, "thermal", reasons & 0x0000_0000_0000_0060 != 0),
+        gpu_throttle_reason_metric(index, "power", reasons & 0x0000_0000_0000_008c != 0),
+        gpu_throttle_reason_metric(index, "other", reasons & 0x0000_0000_0000_0112 != 0),
+    ]
+}
+
+fn gpu_throttle_reason_metric(index: u32, state: &str, active: bool) -> MetricSample {
+    let gpu_index = index.to_string();
+    let device_id = gpu_device_id(index);
+    MetricSample::gauge(
+        names::HARDWARE_STATE,
+        "Hardware numeric state value.",
+        labels(&[
+            ("component", "gpu"),
+            ("device_id", device_id.as_str()),
+            ("gpu_index", gpu_index.as_str()),
+            ("sensor", "gpu_clock_throttle"),
+            ("state", state),
+            ("source", SOURCE),
+            ("source_driver", "nvml"),
+        ]),
+        if active { 1.0 } else { 0.0 },
     )
 }
 
@@ -959,6 +992,7 @@ mod tests {
             graphics_clock_mhz: None,
             memory_clock_mhz: None,
             performance_state: None,
+            current_clocks_throttle_reasons: None,
         }]);
         let mut collector =
             NvidiaNvmlCollector::with_provider(NvidiaNvmlConfig::default(), provider);

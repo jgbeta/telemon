@@ -431,6 +431,21 @@ collectors:
     expose_storage_model: true
     sensor_allowlist: []
     sensor_denylist: []
+  linux_power_supply:
+    enabled: false
+    root: "/sys/class/power_supply"
+    derive_power_when_missing: true
+  linux_amdgpu:
+    enabled: false
+    root: "/sys/class/drm"
+    include_diagnostic_only_gpu_metrics: true
+  linux_drm:
+    enabled: false
+    drm_root: "/sys/class/drm"
+    proc_root: "/proc"
+    target_pid:
+    include_hwmon: true
+    include_fdinfo: false
   nvidia_nvml:
     enabled: true
     library_paths: []

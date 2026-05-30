@@ -78,7 +78,7 @@ The bundled installer can find the bundled `telemon-exporter` binary automatical
 
 ## Enabled Deck Telemetry
 
-The generated Steam Deck profile enables Linux `hwmon`, `/proc` system metrics, `linux_power_supply`, `linux_amdgpu`, and optional `steam_deck_game_state` sampling detection. Gamescope detection is non-fatal; if the expected X11 atoms are unavailable, Telemon falls back to temperature-based adaptive sampling.
+The generated Steam Deck profile enables Linux `hwmon`, `/proc` system metrics, `linux_power_supply`, `linux_amdgpu`, and optional `steam_deck_game_state` sampling detection. The AMDGPU collector reads Steam Deck/APU `gpu_metrics` when available for CPU temperature, APU power, GPU clocks, and throttle flags. Gamescope detection is non-fatal; if the expected X11 atoms are unavailable, Telemon falls back to temperature-based adaptive sampling.
 
 ## Verify
 

@@ -60,6 +60,8 @@ pub struct NvmlApi {
     nvml_device_get_enforced_power_limit: Option<nvml_ffi::NvmlDeviceGetEnforcedPowerLimit>,
     nvml_device_get_clock_info: Option<nvml_ffi::NvmlDeviceGetClockInfo>,
     nvml_device_get_performance_state: Option<nvml_ffi::NvmlDeviceGetPerformanceState>,
+    nvml_device_get_current_clocks_throttle_reasons:
+        Option<nvml_ffi::NvmlDeviceGetCurrentClocksThrottleReasons>,
     nvml_error_string: nvml_ffi::NvmlErrorString,
 }
 
@@ -147,6 +149,8 @@ impl NvmlApi {
             load_optional_symbol(&library, b"nvmlDeviceGetClockInfo\0");
         let nvml_device_get_performance_state =
             load_optional_symbol(&library, b"nvmlDeviceGetPerformanceState\0");
+        let nvml_device_get_current_clocks_throttle_reasons =
+            load_optional_symbol(&library, b"nvmlDeviceGetCurrentClocksThrottleReasons\0");
         let nvml_error_string = load_symbol(
             &library,
             library_name,
@@ -172,6 +176,7 @@ impl NvmlApi {
             nvml_device_get_enforced_power_limit,
             nvml_device_get_clock_info,
             nvml_device_get_performance_state,
+            nvml_device_get_current_clocks_throttle_reasons,
             nvml_error_string,
         })
     }
@@ -376,6 +381,25 @@ impl NvmlApi {
             return Ok(None);
         }
         Ok(Some(state as u32))
+    }
+
+    pub fn device_current_clocks_throttle_reasons(
+        &self,
+        index: u32,
+    ) -> Result<Option<u64>, NvmlCallError> {
+        let Some(get_throttle_reasons) = self.nvml_device_get_current_clocks_throttle_reasons
+        else {
+            return Ok(None);
+        };
+
+        let device = self.device_handle(index)?;
+        let mut reasons: std::os::raw::c_ulonglong = 0;
+        // NVML writes a bitmask of current clock throttle reasons.
+        let result = unsafe { get_throttle_reasons(device, &mut reasons) };
+        if !self.check_optional_return("nvmlDeviceGetCurrentClocksThrottleReasons", result)? {
+            return Ok(None);
+        }
+        Ok(Some(reasons as u64))
     }
 
     fn device_handle(&self, index: u32) -> Result<nvml_ffi::NvmlDevice, NvmlCallError> {

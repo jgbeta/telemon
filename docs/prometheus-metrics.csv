@@ -44,25 +44,25 @@ metric,hardware_cpu_info,gauge,/metrics/static,windows_inventory,source;model;ar
 metric,system_computer_info,gauge,/metrics/static,windows_inventory,source;computer_name;arch,Windows computer identity information.
 metric,hardware_hwmon_chips_discovered,gauge,/metrics,linux_hwmon,collector,Linux hwmon chip directories discovered.
 metric,hardware_hwmon_temperature_inputs_discovered,gauge,/metrics,linux_hwmon,collector,Linux hwmon temp input files discovered before filtering.
-metric,hardware_temperature_celsius,gauge,/metrics,linux_hwmon;nvidia_nvml;windows_lhm_http;windows_lhm_wmi;macos_macmon,component;device_id?;sensor;source;source_driver?;sensor_instance?;gpu_index?;storage_id?;pci_bdf?;storage_model?,Dynamic hardware temperatures.
+metric,hardware_temperature_celsius,gauge,/metrics,linux_hwmon;linux_amdgpu;linux_drm;nvidia_nvml;windows_lhm_http;windows_lhm_wmi;macos_macmon,component;device_id?;sensor;source;source_driver?;sensor_instance?;gpu_index?;storage_id?;pci_bdf?;storage_model?,Dynamic hardware temperatures.
 metric,hardware_temperature_limit_celsius,gauge,/metrics/static,linux_hwmon,component;device_id;sensor;sensor_instance;source;source_driver;limit;storage_id?;pci_bdf?;storage_model?,Temperature thresholds where available.
 metric,hardware_sensor_info,gauge,/metrics/static,linux_hwmon;windows_lhm_http,component;device_id;sensor;sensor_instance;source;source_driver;raw_label;raw_channel;confidence,Raw sensor mapping metadata; value is 1.
-metric,hardware_device_info,gauge,/metrics/static,linux_hwmon;linux_power_supply;linux_amdgpu;nvidia_nvml;macos_macmon,component;source;device_id?;source_driver?;source-specific labels,Hardware identity information; value is 1.
+metric,hardware_device_info,gauge,/metrics/static,linux_hwmon;linux_power_supply;linux_amdgpu;linux_drm;nvidia_nvml;macos_macmon,component;source;device_id?;source_driver?;source-specific labels,Hardware identity information; value is 1.
 metric,hardware_cpu_cluster_cores,gauge,/metrics/static,macos_macmon,cluster;source,Apple Silicon CPU core count by cluster.
 metric,hardware_gpu_cores,gauge,/metrics/static,macos_macmon,gpu_index;source,Apple Silicon GPU core count.
 metric,hardware_clock_available_hertz,gauge,/metrics/static,macos_macmon,component;state;source;cluster?;gpu_index?,Available Apple Silicon hardware clock speeds.
 metric,hardware_storage_capacity_bytes,gauge,/metrics/static,linux_hwmon,component;device_id;source;source_driver;storage_id;namespace,Linux NVMe namespace capacity in bytes.
-metric,hardware_voltage_volts,gauge,/metrics,windows_lhm_http,component;device_id;sensor;sensor_instance;source;source_driver,Voltage readings.
+metric,hardware_voltage_volts,gauge,/metrics,linux_drm;windows_lhm_http,component;device_id;sensor;sensor_instance;source;source_driver,Voltage readings.
 metric,hardware_current_amperes,gauge,/metrics,windows_lhm_http,component;device_id;sensor;sensor_instance;source;source_driver,Current readings.
 metric,hardware_battery_charge_ratio,gauge,/metrics,linux_power_supply,battery;source,Battery charge as a ratio from 0 to 1.
 metric,hardware_battery_voltage_volts,gauge,/metrics,linux_power_supply,battery;source,Battery voltage in volts.
 metric,hardware_battery_current_amperes,gauge,/metrics,linux_power_supply,battery;source,Battery current in amperes.
 metric,hardware_battery_power_watts,gauge,/metrics,linux_power_supply,battery;direction;derived;source,Battery power in watts; derived=true means voltage multiplied by current.
-metric,hardware_power_watts,gauge,/metrics,nvidia_nvml;windows_lhm_http;macos_macmon,component;source;device_id?;sensor?;sensor_instance?;source_driver?;gpu_index?,Current hardware power in watts.
-metric,hardware_power_limit_watts,gauge,/metrics/static,nvidia_nvml;windows_lhm_http,component;device_id;sensor;source;source_driver;limit;gpu_index?,Power limits in watts.
-metric,hardware_clock_hertz,gauge,/metrics,linux_amdgpu;nvidia_nvml;windows_lhm_http;macos_macmon,component;source;device_id?;sensor?;clock?;unit?;cluster?;source_driver?;gpu_index?,Hardware clock speed in hertz.
-metric,hardware_utilization_ratio,gauge,/metrics,linux_amdgpu;nvidia_nvml;windows_lhm_http;macos_macmon,component;source;device_id?;sensor?;engine?;unit?;cluster?;source_driver?;gpu_index?,Utilization ratio from 0 to 1.
-metric,hardware_memory_bytes,gauge,/metrics;/metrics/static,linux_amdgpu;nvidia_nvml;windows_lhm_http,component;device_id;memory;state;source;source_driver;gpu_index?,Hardware memory bytes by state.
+metric,hardware_power_watts,gauge,/metrics,linux_amdgpu;linux_drm;nvidia_nvml;windows_lhm_http;macos_macmon,component;source;device_id?;sensor?;sensor_instance?;source_driver?;gpu_index?,Current hardware power in watts.
+metric,hardware_power_limit_watts,gauge,/metrics/static,linux_drm;nvidia_nvml;windows_lhm_http,component;device_id;sensor;source;source_driver;limit;gpu_index?,Power limits in watts.
+metric,hardware_clock_hertz,gauge,/metrics,linux_amdgpu;linux_drm;nvidia_nvml;windows_lhm_http;macos_macmon,component;source;device_id?;sensor?;clock?;unit?;cluster?;source_driver?;gpu_index?,Hardware clock speed in hertz.
+metric,hardware_utilization_ratio,gauge,/metrics,linux_amdgpu;linux_drm;nvidia_nvml;windows_lhm_http;macos_macmon,component;source;device_id?;sensor?;engine?;unit?;cluster?;source_driver?;gpu_index?,Utilization ratio from 0 to 1.
+metric,hardware_memory_bytes,gauge,/metrics;/metrics/static,linux_amdgpu;linux_drm;nvidia_nvml;windows_lhm_http,component;device_id;memory;state;source;source_driver;gpu_index?,Hardware memory bytes by state.
 metric,hardware_fan_speed_ratio,gauge,/metrics,nvidia_nvml;windows_lhm_http,component;device_id;sensor;sensor_instance;source;source_driver;gpu_index?,Fan speed ratio from 0 to 1.
-metric,hardware_fan_speed_rpm,gauge,/metrics,linux_hwmon;windows_lhm_http,component;device_id;sensor;sensor_instance;source;source_driver,Fan or pump speed in RPM.
-metric,hardware_state,gauge,/metrics,nvidia_nvml,component;device_id;sensor;state;source;source_driver;gpu_index,Numeric hardware state values.
+metric,hardware_fan_speed_rpm,gauge,/metrics,linux_hwmon;linux_drm;windows_lhm_http,component;device_id;sensor;sensor_instance;source;source_driver,Fan or pump speed in RPM.
+metric,hardware_state,gauge,/metrics,linux_amdgpu;linux_drm;nvidia_nvml,component;device_id;sensor;state;source;source_driver;gpu_index,Numeric hardware state values.
