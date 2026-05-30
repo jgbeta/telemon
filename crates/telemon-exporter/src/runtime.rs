@@ -4,7 +4,7 @@ use tracing::{info, warn};
 
 use crate::adaptive::AdaptiveSamplingState;
 use crate::cache::MetricCache;
-use crate::{diagnostics, http, scheduler};
+use crate::{diagnostics, game_state, http, scheduler};
 use telemon_core::config::AppConfig;
 
 pub async fn run(config: AppConfig) -> Result<()> {
@@ -32,6 +32,7 @@ pub async fn run_with_shutdown(
     let static_cache = MetricCache::shared();
     let collectors = diagnostics::build_scheduled_collectors(&config);
     let adaptive_state = AdaptiveSamplingState::new(config.adaptive_sampling.levels.normal_seconds);
+    let sampling_override = game_state::sampling_override(&config);
 
     let scheduler_handle = tokio::spawn(scheduler::run_scheduler(
         collectors,
@@ -39,6 +40,7 @@ pub async fn run_with_shutdown(
         static_cache.clone(),
         config.adaptive_sampling.clone(),
         adaptive_state.clone(),
+        sampling_override,
         shutdown_rx.clone(),
     ));
     let registration_handle = if config.registration.enabled {

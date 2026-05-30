@@ -17,6 +17,10 @@ pub enum CollectorGroup {
     Static,
 }
 
+pub trait SamplingOverride: Send {
+    fn forced_interval_seconds(&mut self) -> Option<u64>;
+}
+
 pub struct ScheduledCollector {
     collector: Box<dyn Collector>,
     interval: Duration,
@@ -56,6 +60,7 @@ pub async fn run_scheduler(
     static_cache: SharedMetricCache,
     adaptive_config: AdaptiveSamplingConfig,
     adaptive_state: AdaptiveSamplingState,
+    mut sampling_override: Option<Box<dyn SamplingOverride>>,
     mut shutdown: watch::Receiver<bool>,
 ) {
     if collectors.is_empty() {
@@ -76,6 +81,17 @@ pub async fn run_scheduler(
         }
 
         let now = Instant::now();
+        let forced_interval_seconds = sampling_override
+            .as_mut()
+            .and_then(|override_source| override_source.forced_interval_seconds());
+        if let Some(interval_seconds) = forced_interval_seconds {
+            let forced_due = now + Duration::from_secs(interval_seconds);
+            for (index, scheduled) in collectors.iter().enumerate() {
+                if scheduled.group == CollectorGroup::Dynamic && next_due[index] > forced_due {
+                    next_due[index] = now;
+                }
+            }
+        }
         let mut changed = false;
 
         for (index, scheduled) in collectors.iter_mut().enumerate() {
@@ -124,14 +140,21 @@ pub async fn run_scheduler(
                     }
                 }
 
-                next_due[index] = now + scheduled.interval;
+                let effective_interval = forced_interval_seconds
+                    .filter(|_| scheduled.group == CollectorGroup::Dynamic)
+                    .map(Duration::from_secs)
+                    .unwrap_or(scheduled.interval);
+                next_due[index] = now + effective_interval;
                 changed = true;
             }
         }
 
         if changed {
-            let requested_interval =
-                requested_interval_seconds(collectors.as_slice(), &adaptive_config);
+            let requested_interval = requested_interval_seconds(
+                collectors.as_slice(),
+                &adaptive_config,
+                forced_interval_seconds,
+            );
             adaptive_state.set_requested_interval_seconds(requested_interval);
             let mut dynamic_snapshot = vec![adaptive::requested_scrape_interval_metric(
                 adaptive_state.requested_interval_seconds(),
@@ -269,7 +292,11 @@ fn is_static_metric(metric: &MetricSample) -> bool {
 fn requested_interval_seconds(
     collectors: &[ScheduledCollector],
     adaptive_config: &AdaptiveSamplingConfig,
+    forced_interval_seconds: Option<u64>,
 ) -> u64 {
+    if let Some(interval_seconds) = forced_interval_seconds {
+        return interval_seconds;
+    }
     if !adaptive_config.enabled {
         return adaptive_config.levels.normal_seconds;
     }
@@ -304,6 +331,18 @@ mod tests {
         fn collect(&mut self) -> CollectorResult {
             CollectorResult::failure(self.name(), "expected failure", 1, Instant::now())
         }
+    }
+
+    #[test]
+    fn forced_interval_overrides_adaptive_request() {
+        let config = AdaptiveSamplingConfig::default();
+        let collectors =
+            vec![
+                ScheduledCollector::new(Box::new(FailingCollector), Duration::from_secs(15))
+                    .adaptive(15),
+            ];
+
+        assert_eq!(requested_interval_seconds(&collectors, &config, Some(1)), 1);
     }
 
     #[test]

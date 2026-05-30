@@ -476,6 +476,23 @@ collectors:
     sensor_allowlist: []
     sensor_denylist: []
 
+  linux_power_supply:
+    enabled: true
+    root: "/sys/class/power_supply"
+    derive_power_when_missing: true
+
+  linux_amdgpu:
+    enabled: true
+    root: "/sys/class/drm"
+    include_diagnostic_only_gpu_metrics: true
+
+  steam_deck_game_state:
+    enabled: true
+    poll_interval_seconds: 1
+    stop_debounce_seconds: 5
+    xprop_path: "xprop"
+    display: ":0"
+
   nvidia_nvml:
     enabled: false
     library_paths: []

@@ -21,7 +21,10 @@ pub trait SystemProvider: Send + Sync {
 }
 
 #[derive(Debug, Default)]
-pub struct DefaultSystemProvider;
+pub struct DefaultSystemProvider {
+    #[cfg(target_os = "linux")]
+    previous_cpu_times: Option<LinuxCpuTimes>,
+}
 
 pub struct SystemCollector {
     config: SystemConfig,
@@ -31,7 +34,7 @@ pub struct SystemCollector {
 
 impl DefaultSystemProvider {
     pub fn new() -> Self {
-        Self
+        Self::default()
     }
 }
 
@@ -100,7 +103,7 @@ impl SystemProvider for DefaultSystemProvider {
             memory_total_bytes: memory_total_bytes(),
             memory_available_bytes: memory_available_bytes(),
             cpu_count: cpu_count(),
-            cpu_usage_ratio: None,
+            cpu_usage_ratio: cpu_usage_ratio(self),
         })
     }
 }
@@ -194,6 +197,61 @@ fn cpu_count() -> Option<u64> {
     std::thread::available_parallelism()
         .ok()
         .and_then(|count| u64::try_from(count.get()).ok())
+}
+
+#[cfg(target_os = "linux")]
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+struct LinuxCpuTimes {
+    idle: u64,
+    total: u64,
+}
+
+#[cfg(target_os = "linux")]
+fn cpu_usage_ratio(provider: &mut DefaultSystemProvider) -> Option<f64> {
+    let current = read_linux_cpu_times()?;
+    let previous = provider.previous_cpu_times.replace(current)?;
+    linux_cpu_usage_ratio(previous, current)
+}
+
+#[cfg(not(target_os = "linux"))]
+fn cpu_usage_ratio(_provider: &mut DefaultSystemProvider) -> Option<f64> {
+    None
+}
+
+#[cfg(target_os = "linux")]
+fn read_linux_cpu_times() -> Option<LinuxCpuTimes> {
+    parse_linux_cpu_times(&fs::read_to_string("/proc/stat").ok()?)
+}
+
+#[cfg(target_os = "linux")]
+fn parse_linux_cpu_times(text: &str) -> Option<LinuxCpuTimes> {
+    let line = text.lines().find(|line| line.starts_with("cpu "))?;
+    let values = line
+        .split_whitespace()
+        .skip(1)
+        .map(str::parse::<u64>)
+        .collect::<Result<Vec<_>, _>>()
+        .ok()?;
+    if values.len() < 4 {
+        return None;
+    }
+
+    let idle = values
+        .get(3)
+        .copied()?
+        .saturating_add(values.get(4).copied().unwrap_or(0));
+    let total = values.iter().copied().sum();
+    Some(LinuxCpuTimes { idle, total })
+}
+
+#[cfg(target_os = "linux")]
+fn linux_cpu_usage_ratio(previous: LinuxCpuTimes, current: LinuxCpuTimes) -> Option<f64> {
+    let total_delta = current.total.checked_sub(previous.total)?;
+    if total_delta == 0 {
+        return None;
+    }
+    let idle_delta = current.idle.saturating_sub(previous.idle).min(total_delta);
+    Some((total_delta - idle_delta) as f64 / total_delta as f64)
 }
 
 #[cfg(target_os = "macos")]
@@ -426,6 +484,32 @@ mod tests {
         assert!(metrics
             .iter()
             .all(|metric| metric.name != names::CPU_USAGE_RATIO));
+    }
+
+    #[cfg(target_os = "linux")]
+    #[test]
+    fn parses_proc_stat_cpu_usage_delta() {
+        let previous = parse_linux_cpu_times(
+            "cpu  10 0 10 80 0 0 0 0 0 0
+",
+        )
+        .unwrap();
+        let current = parse_linux_cpu_times(
+            "cpu  20 0 20 100 0 0 0 0 0 0
+",
+        )
+        .unwrap();
+
+        assert_eq!(linux_cpu_usage_ratio(previous, current), Some(0.5));
+    }
+
+    #[cfg(target_os = "linux")]
+    #[test]
+    fn first_default_linux_cpu_sample_is_omitted() {
+        let mut provider = DefaultSystemProvider::new();
+        let first = provider.snapshot().unwrap();
+
+        assert!(first.cpu_usage_ratio.is_none());
     }
 
     #[test]

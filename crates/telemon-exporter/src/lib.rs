@@ -2,6 +2,7 @@ pub mod adaptive;
 pub mod cache;
 pub mod cli;
 pub mod diagnostics;
+pub mod game_state;
 pub mod hardware_inspect;
 pub mod http;
 pub mod macmon_json;

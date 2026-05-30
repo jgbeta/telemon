@@ -76,6 +76,10 @@ bash install-steamdeck.sh \
 
 The bundled installer can find the bundled `telemon-exporter` binary automatically.
 
+## Enabled Deck Telemetry
+
+The generated Steam Deck profile enables Linux `hwmon`, `/proc` system metrics, `linux_power_supply`, `linux_amdgpu`, and optional `steam_deck_game_state` sampling detection. Gamescope detection is non-fatal; if the expected X11 atoms are unavailable, Telemon falls back to temperature-based adaptive sampling.
+
 ## Verify
 
 On the Steam Deck:

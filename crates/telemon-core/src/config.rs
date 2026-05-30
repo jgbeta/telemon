@@ -111,6 +111,9 @@ pub struct CollectorsConfig {
     pub macos_macmon: MacosMacmonConfig,
     pub macos_exact_temperature_experimental: MacosExactTemperatureExperimentalConfig,
     pub linux_hwmon: LinuxHwmonConfig,
+    pub linux_power_supply: LinuxPowerSupplyConfig,
+    pub linux_amdgpu: LinuxAmdgpuConfig,
+    pub steam_deck_game_state: SteamDeckGameStateConfig,
     pub nvidia_nvml: NvidiaNvmlConfig,
     pub windows_baseline: WindowsBaselineConfig,
     pub windows_inventory: WindowsInventoryConfig,
@@ -162,6 +165,32 @@ pub struct LinuxHwmonConfig {
     pub expose_storage_model: bool,
     pub sensor_allowlist: Vec<String>,
     pub sensor_denylist: Vec<String>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(default)]
+pub struct LinuxPowerSupplyConfig {
+    pub enabled: bool,
+    pub root: PathBuf,
+    pub derive_power_when_missing: bool,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(default)]
+pub struct LinuxAmdgpuConfig {
+    pub enabled: bool,
+    pub root: PathBuf,
+    pub include_diagnostic_only_gpu_metrics: bool,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(default)]
+pub struct SteamDeckGameStateConfig {
+    pub enabled: bool,
+    pub poll_interval_seconds: u64,
+    pub stop_debounce_seconds: u64,
+    pub xprop_path: String,
+    pub display: String,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -337,6 +366,36 @@ impl AppConfig {
 
         if self.collectors.linux_hwmon.root.as_os_str().is_empty() {
             bail!("collectors.linux_hwmon.root must not be empty");
+        }
+        if self
+            .collectors
+            .linux_power_supply
+            .root
+            .as_os_str()
+            .is_empty()
+        {
+            bail!("collectors.linux_power_supply.root must not be empty");
+        }
+        if self.collectors.linux_amdgpu.root.as_os_str().is_empty() {
+            bail!("collectors.linux_amdgpu.root must not be empty");
+        }
+        validate_positive(
+            self.collectors.steam_deck_game_state.poll_interval_seconds,
+            "collectors.steam_deck_game_state.poll_interval_seconds",
+        )?;
+        validate_positive(
+            self.collectors.steam_deck_game_state.stop_debounce_seconds,
+            "collectors.steam_deck_game_state.stop_debounce_seconds",
+        )?;
+        if self.collectors.steam_deck_game_state.enabled
+            && self
+                .collectors
+                .steam_deck_game_state
+                .xprop_path
+                .trim()
+                .is_empty()
+        {
+            bail!("collectors.steam_deck_game_state.xprop_path must not be empty when enabled");
         }
         if self.collectors.windows_lhm_http.enabled {
             if self.collectors.windows_lhm_http.url.trim().is_empty() {
@@ -612,6 +671,38 @@ impl Default for LinuxHwmonConfig {
     }
 }
 
+impl Default for LinuxPowerSupplyConfig {
+    fn default() -> Self {
+        Self {
+            enabled: false,
+            root: PathBuf::from("/sys/class/power_supply"),
+            derive_power_when_missing: true,
+        }
+    }
+}
+
+impl Default for LinuxAmdgpuConfig {
+    fn default() -> Self {
+        Self {
+            enabled: false,
+            root: PathBuf::from("/sys/class/drm"),
+            include_diagnostic_only_gpu_metrics: true,
+        }
+    }
+}
+
+impl Default for SteamDeckGameStateConfig {
+    fn default() -> Self {
+        Self {
+            enabled: false,
+            poll_interval_seconds: 1,
+            stop_debounce_seconds: 5,
+            xprop_path: "xprop".to_string(),
+            display: ":0".to_string(),
+        }
+    }
+}
+
 impl Default for NvidiaNvmlConfig {
     fn default() -> Self {
         Self {
@@ -775,6 +866,49 @@ mod tests {
     }
 
     #[test]
+    fn defaults_linux_handheld_collector_config() {
+        let config = AppConfig::default();
+
+        assert!(!config.collectors.linux_power_supply.enabled);
+        assert_eq!(
+            config.collectors.linux_power_supply.root,
+            PathBuf::from("/sys/class/power_supply")
+        );
+        assert!(
+            config
+                .collectors
+                .linux_power_supply
+                .derive_power_when_missing
+        );
+        assert!(!config.collectors.linux_amdgpu.enabled);
+        assert_eq!(
+            config.collectors.linux_amdgpu.root,
+            PathBuf::from("/sys/class/drm")
+        );
+        assert!(
+            config
+                .collectors
+                .linux_amdgpu
+                .include_diagnostic_only_gpu_metrics
+        );
+        assert!(!config.collectors.steam_deck_game_state.enabled);
+        assert_eq!(
+            config
+                .collectors
+                .steam_deck_game_state
+                .poll_interval_seconds,
+            1
+        );
+        assert_eq!(
+            config
+                .collectors
+                .steam_deck_game_state
+                .stop_debounce_seconds,
+            5
+        );
+    }
+
+    #[test]
     fn defaults_nvidia_nvml_config() {
         let config = AppConfig::default();
 
@@ -864,6 +998,23 @@ mod tests {
     fn rejects_zero_system_interval() {
         let mut config = AppConfig::default();
         config.collection.system_interval_seconds = 0;
+
+        assert!(config.validate().is_err());
+    }
+
+    #[test]
+    fn rejects_invalid_steam_deck_game_state_config() {
+        let mut config = AppConfig::default();
+        config
+            .collectors
+            .steam_deck_game_state
+            .poll_interval_seconds = 0;
+
+        assert!(config.validate().is_err());
+
+        let mut config = AppConfig::default();
+        config.collectors.steam_deck_game_state.enabled = true;
+        config.collectors.steam_deck_game_state.xprop_path = String::new();
 
         assert!(config.validate().is_err());
     }

@@ -3,6 +3,9 @@ use std::time::Duration;
 use crate::registration::DeviceInfoCollector;
 use crate::scheduler::{collect_snapshot_once, ScheduledCollector};
 use telemon_collectors::gpu::nvidia::collector::NvidiaNvmlCollector;
+use telemon_collectors::linux::amdgpu::LinuxAmdgpuCollector;
+use telemon_collectors::linux::gamescope::inspect_hardware as inspect_steam_deck_game_state;
+use telemon_collectors::linux::power_supply::LinuxPowerSupplyCollector;
 use telemon_collectors::macos::exact_temperature_experimental::MacosExactTemperatureExperimentalCollector;
 use telemon_collectors::macos::macmon::MacosMacmonCollector;
 use telemon_collectors::macos::thermal_state::MacosThermalStateCollector;
@@ -84,6 +87,24 @@ pub fn build_scheduled_collectors(config: &AppConfig) -> Vec<ScheduledCollector>
             )
             .adaptive(config.adaptive_sampling.levels.normal_seconds),
         );
+    }
+
+    if config.collectors.linux_power_supply.enabled {
+        collectors.push(ScheduledCollector::new(
+            Box::new(LinuxPowerSupplyCollector::new(
+                config.collectors.linux_power_supply.clone(),
+            )),
+            Duration::from_secs(config.collection.system_interval_seconds),
+        ));
+    }
+
+    if config.collectors.linux_amdgpu.enabled {
+        collectors.push(ScheduledCollector::new(
+            Box::new(LinuxAmdgpuCollector::new(
+                config.collectors.linux_amdgpu.clone(),
+            )),
+            Duration::from_secs(config.collection.gpu_interval_seconds),
+        ));
     }
 
     if config.collectors.nvidia_nvml.enabled {
@@ -175,6 +196,15 @@ pub fn check_report(config: &AppConfig) -> String {
     if config.collectors.linux_hwmon.enabled {
         report.push_str("- linux_hwmon\n");
     }
+    if config.collectors.linux_power_supply.enabled {
+        report.push_str("- linux_power_supply\n");
+    }
+    if config.collectors.linux_amdgpu.enabled {
+        report.push_str("- linux_amdgpu\n");
+    }
+    if config.collectors.steam_deck_game_state.enabled {
+        report.push_str("- steam_deck_game_state_sampling_override\n");
+    }
     if config.collectors.nvidia_nvml.enabled {
         report.push_str("- nvidia_nvml\n");
     }
@@ -201,6 +231,9 @@ pub fn check_report(config: &AppConfig) -> String {
             .collectors
             .macos_exact_temperature_experimental
             .enabled
+        && !config.collectors.linux_power_supply.enabled
+        && !config.collectors.linux_amdgpu.enabled
+        && !config.collectors.steam_deck_game_state.enabled
         && !config.collectors.nvidia_nvml.enabled
         && !config.collectors.windows_baseline.enabled
         && !config.collectors.windows_lhm_http.enabled
@@ -269,6 +302,42 @@ pub fn discover_report(config: &AppConfig) -> String {
         config.collectors.linux_hwmon.enabled,
         config.collectors.linux_hwmon.root.display(),
         config.collectors.linux_hwmon.include_unknown_sensors
+    ));
+
+    let power_supply_state =
+        LinuxPowerSupplyCollector::discover_summary(&config.collectors.linux_power_supply);
+    report.push_str(&format!(
+        "- linux_power_supply: {}, enabled={}, root={}, derive_power_when_missing={}\n",
+        power_supply_state,
+        config.collectors.linux_power_supply.enabled,
+        config.collectors.linux_power_supply.root.display(),
+        config
+            .collectors
+            .linux_power_supply
+            .derive_power_when_missing
+    ));
+
+    let amdgpu_state = LinuxAmdgpuCollector::discover_summary(&config.collectors.linux_amdgpu);
+    report.push_str(&format!(
+        "- linux_amdgpu: {}, enabled={}, root={}, diagnostic_gpu_metrics={}\n",
+        amdgpu_state,
+        config.collectors.linux_amdgpu.enabled,
+        config.collectors.linux_amdgpu.root.display(),
+        config
+            .collectors
+            .linux_amdgpu
+            .include_diagnostic_only_gpu_metrics
+    ));
+
+    let game_state = inspect_steam_deck_game_state(&config.collectors.steam_deck_game_state);
+    report.push_str(&format!(
+        "- steam_deck_game_state: enabled={}, supported={}, state={}, display={}, poll_interval_seconds={}, stop_debounce_seconds={}\n",
+        game_state.enabled,
+        game_state.supported,
+        game_state.state.as_str(),
+        game_state.display,
+        config.collectors.steam_deck_game_state.poll_interval_seconds,
+        config.collectors.steam_deck_game_state.stop_debounce_seconds
     ));
 
     let nvidia_state = NvidiaNvmlCollector::discover_summary(&config.collectors.nvidia_nvml);

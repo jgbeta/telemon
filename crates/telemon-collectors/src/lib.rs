@@ -1,4 +1,5 @@
 pub mod gpu;
+pub mod linux;
 pub mod macos;
 pub mod system;
 pub mod temperature;
