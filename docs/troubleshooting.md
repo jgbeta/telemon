@@ -46,6 +46,23 @@ Prometheus target is down:
   `/prometheus/sd/1s`.
 - Firewall blocks port `9185`.
 
+Short gaps appear when adaptive scrape interval changes:
+
+- Telemon currently moves a device between interval-specific Prometheus jobs
+  such as `telemon-15s` and `telemon-1s`.
+- A short gap can happen while the exporter heartbeats the new interval, the
+  registry updates HTTP service discovery, and Prometheus refreshes the new job.
+- Check `exporter_requested_scrape_interval_changes_total` and
+  `exporter_requested_scrape_interval_last_change_timestamp_seconds` around the
+  gap.
+- If `exporter_snapshot_age_seconds{kind="dynamic"}` stays low while
+  `exporter_scrape_request_gap_seconds{endpoint="/metrics"}` rises, the exporter
+  kept sampling locally and the gap is probably scrape/network/Prometheus-side.
+- If snapshot age rises too, the exporter scheduler or collector path lagged on
+  the device.
+- `/metrics/static` uses a higher effective gap threshold based on the static
+  scrape cadence, so normal 300s static scrapes are not counted as gaps.
+
 Exporter fails with `Address already in use`:
 
 - Another exporter is already listening on the same host port.

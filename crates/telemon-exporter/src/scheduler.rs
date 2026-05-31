@@ -7,6 +7,7 @@ use tracing::{debug, error};
 use crate::adaptive::{self, AdaptiveInterval, AdaptiveSamplingState};
 use crate::cache::SharedMetricCache;
 use crate::diagnostics;
+use crate::runtime_diagnostics::ExporterDiagnostics;
 use telemon_collectors::traits::Collector;
 use telemon_core::config::AdaptiveSamplingConfig;
 use telemon_core::metrics::model::MetricSample;
@@ -54,15 +55,26 @@ impl ScheduledCollector {
     }
 }
 
-pub async fn run_scheduler(
-    mut collectors: Vec<ScheduledCollector>,
-    dynamic_cache: SharedMetricCache,
-    static_cache: SharedMetricCache,
-    adaptive_config: AdaptiveSamplingConfig,
-    adaptive_state: AdaptiveSamplingState,
-    mut sampling_override: Option<Box<dyn SamplingOverride>>,
-    mut shutdown: watch::Receiver<bool>,
-) {
+pub struct SchedulerRuntime {
+    pub collectors: Vec<ScheduledCollector>,
+    pub dynamic_cache: SharedMetricCache,
+    pub static_cache: SharedMetricCache,
+    pub adaptive_config: AdaptiveSamplingConfig,
+    pub adaptive_state: AdaptiveSamplingState,
+    pub sampling_override: Option<Box<dyn SamplingOverride>>,
+    pub exporter_diagnostics: ExporterDiagnostics,
+}
+
+pub async fn run_scheduler(runtime: SchedulerRuntime, mut shutdown: watch::Receiver<bool>) {
+    let SchedulerRuntime {
+        mut collectors,
+        dynamic_cache,
+        static_cache,
+        adaptive_config,
+        adaptive_state,
+        mut sampling_override,
+        exporter_diagnostics,
+    } = runtime;
     if collectors.is_empty() {
         if let Ok(mut cache) = static_cache.write() {
             cache.replace_snapshot(vec![diagnostics::build_info_metric()]);
@@ -74,6 +86,8 @@ pub async fn run_scheduler(
         BTreeMap::new();
     let mut latest_static_by_collector: BTreeMap<&'static str, Vec<MetricSample>> = BTreeMap::new();
     adaptive_state.set_requested_interval_seconds(adaptive_config.levels.normal_seconds);
+    exporter_diagnostics
+        .record_requested_interval(adaptive_config.levels.normal_seconds, "scheduler_startup");
 
     loop {
         if *shutdown.borrow() {
@@ -96,6 +110,12 @@ pub async fn run_scheduler(
 
         for (index, scheduled) in collectors.iter_mut().enumerate() {
             if now >= next_due[index] {
+                let scheduled_due = next_due[index];
+                let collector_name = scheduled.collector.name();
+                exporter_diagnostics.record_scheduler_lag(
+                    collector_name,
+                    now.duration_since(scheduled_due).as_secs_f64(),
+                );
                 let result = scheduled.collector.collect();
                 if result.success {
                     debug!(
@@ -155,6 +175,12 @@ pub async fn run_scheduler(
                 &adaptive_config,
                 forced_interval_seconds,
             );
+            let interval_source = if forced_interval_seconds.is_some() {
+                "sampling_override"
+            } else {
+                "adaptive_or_base"
+            };
+            exporter_diagnostics.record_requested_interval(requested_interval, interval_source);
             adaptive_state.set_requested_interval_seconds(requested_interval);
             let mut dynamic_snapshot = vec![adaptive::requested_scrape_interval_metric(
                 adaptive_state.requested_interval_seconds(),

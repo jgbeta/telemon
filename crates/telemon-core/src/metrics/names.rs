@@ -11,6 +11,19 @@ pub const ALLOWED_PREFIXES: &[&str] = &[
 pub const BUILD_INFO: &str = "exporter_build_info";
 pub const DEVICE_INFO: &str = "device_info";
 pub const REQUESTED_SCRAPE_INTERVAL_SECONDS: &str = "exporter_requested_scrape_interval_seconds";
+pub const SNAPSHOT_LAST_UPDATE_TIMESTAMP_SECONDS: &str =
+    "exporter_snapshot_last_update_timestamp_seconds";
+pub const SNAPSHOT_AGE_SECONDS: &str = "exporter_snapshot_age_seconds";
+pub const SNAPSHOT_UPDATES_TOTAL: &str = "exporter_snapshot_updates_total";
+pub const SCRAPE_REQUESTS_TOTAL: &str = "exporter_scrape_requests_total";
+pub const SCRAPE_LAST_REQUEST_TIMESTAMP_SECONDS: &str =
+    "exporter_scrape_last_request_timestamp_seconds";
+pub const SCRAPE_REQUEST_GAP_SECONDS: &str = "exporter_scrape_request_gap_seconds";
+pub const SCRAPE_GAPS_TOTAL: &str = "exporter_scrape_gaps_total";
+pub const REQUESTED_SCRAPE_INTERVAL_CHANGES_TOTAL: &str =
+    "exporter_requested_scrape_interval_changes_total";
+pub const REQUESTED_SCRAPE_INTERVAL_LAST_CHANGE_TIMESTAMP_SECONDS: &str =
+    "exporter_requested_scrape_interval_last_change_timestamp_seconds";
 pub const COLLECTOR_UP: &str = "exporter_collector_up";
 pub const COLLECTOR_SUPPORTED: &str = "exporter_collector_supported";
 pub const COLLECTOR_ERRORS_TOTAL: &str = "exporter_collector_errors_total";

@@ -2,6 +2,15 @@ kind,metric,type,endpoint,source,labels,notes
 metric,exporter_build_info,gauge,/metrics/static,exporter,version;os;arch,Build metadata; value is always 1.
 metric,device_info,gauge,/metrics/static,registration,device_uuid;machine_uuid;user_name;device_name;os;os_version;arch,Registry identity; value is always 1.
 metric,exporter_requested_scrape_interval_seconds,gauge,/metrics,adaptive_scheduler,,Exporter-requested device-level scrape interval.
+metric,exporter_snapshot_last_update_timestamp_seconds,gauge,/metrics;/metrics/static,exporter_diagnostics,kind,Unix timestamp of the last dynamic/static snapshot cache update.
+metric,exporter_snapshot_age_seconds,gauge,/metrics;/metrics/static,exporter_diagnostics,kind,Age of the current dynamic/static snapshot cache.
+metric,exporter_snapshot_updates_total,counter,/metrics;/metrics/static,exporter_diagnostics,kind,Total dynamic/static snapshot cache updates.
+metric,exporter_scrape_requests_total,counter,/metrics;/metrics/static,exporter_diagnostics,endpoint;status,Total scrape requests observed by the exporter for metrics endpoints.
+metric,exporter_scrape_last_request_timestamp_seconds,gauge,/metrics;/metrics/static,exporter_diagnostics,endpoint,Unix timestamp of the last scrape request observed for each metrics endpoint.
+metric,exporter_scrape_request_gap_seconds,gauge,/metrics;/metrics/static,exporter_diagnostics,endpoint,Seconds between the two most recent scrape requests for each metrics endpoint.
+metric,exporter_scrape_gaps_total,counter,/metrics;/metrics/static,exporter_diagnostics,endpoint,Total scrape request gaps above the configured diagnostics threshold.
+metric,exporter_requested_scrape_interval_changes_total,counter,/metrics;/metrics/static,exporter_diagnostics,from;to,Total requested scrape interval transitions between adaptive buckets.
+metric,exporter_requested_scrape_interval_last_change_timestamp_seconds,gauge,/metrics;/metrics/static,exporter_diagnostics,,Unix timestamp of the last requested scrape interval transition.
 metric,exporter_collector_up,gauge,/metrics,all_collectors,collector,1 when collector is healthy in the last run.
 metric,exporter_collector_supported,gauge,/metrics/static,all_collectors,collector,1 when collector is supported on the host.
 metric,exporter_collector_errors_total,counter,/metrics,all_collectors,collector,Total collector errors observed by the exporter process.

@@ -49,6 +49,15 @@ default `honor_labels: false`, conflicting scraped labels can be renamed to
 | `exporter_build_info` | gauge | `/metrics/static` | exporter | `version`, `os`, `arch` | Build metadata; value is always `1`. |
 | `device_info` | gauge | `/metrics/static` | registration | `device_uuid`, `machine_uuid`, `user_name`, `device_name`, `os`, `os_version`, `arch` | Emitted only when registration is enabled and a device UUID exists; value is always `1`. |
 | `exporter_requested_scrape_interval_seconds` | gauge | `/metrics` | adaptive scheduler | none | Exporter-requested device-level scrape interval. |
+| `exporter_snapshot_last_update_timestamp_seconds` | gauge | `/metrics`, `/metrics/static` | exporter diagnostics | `kind` | Unix timestamp of the last dynamic/static snapshot cache update. |
+| `exporter_snapshot_age_seconds` | gauge | `/metrics`, `/metrics/static` | exporter diagnostics | `kind` | Age of the current dynamic/static snapshot cache. Low age with Grafana gaps points away from local collector lag. |
+| `exporter_snapshot_updates_total` | counter | `/metrics`, `/metrics/static` | exporter diagnostics | `kind` | Total dynamic/static snapshot cache updates. |
+| `exporter_scrape_requests_total` | counter | `/metrics`, `/metrics/static` | exporter diagnostics | `endpoint`, `status` | Total scrape requests observed by the exporter for metrics endpoints. |
+| `exporter_scrape_last_request_timestamp_seconds` | gauge | `/metrics`, `/metrics/static` | exporter diagnostics | `endpoint` | Unix timestamp of the last scrape request observed for each metrics endpoint. |
+| `exporter_scrape_request_gap_seconds` | gauge | `/metrics`, `/metrics/static` | exporter diagnostics | `endpoint` | Seconds between the two most recent scrape requests for each metrics endpoint. |
+| `exporter_scrape_gaps_total` | counter | `/metrics`, `/metrics/static` | exporter diagnostics | `endpoint` | Total scrape request gaps above the configured diagnostics threshold. |
+| `exporter_requested_scrape_interval_changes_total` | counter | `/metrics`, `/metrics/static` | exporter diagnostics | `from`, `to` | Total requested scrape interval transitions between adaptive buckets. |
+| `exporter_requested_scrape_interval_last_change_timestamp_seconds` | gauge | `/metrics`, `/metrics/static` | exporter diagnostics | none | Unix timestamp of the last requested scrape interval transition. |
 | `exporter_collector_up` | gauge | `/metrics` | all collectors | `collector` | `1` when collector is healthy in the last run, otherwise `0`. |
 | `exporter_collector_supported` | gauge | `/metrics/static` | all collectors | `collector` | `1` when collector is supported on the host, otherwise `0`. |
 | `exporter_collector_errors_total` | counter | `/metrics` | all collectors | `collector` | Total collector errors observed by the exporter process. |

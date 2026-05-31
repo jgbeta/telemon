@@ -6,8 +6,9 @@ use tokio::net::{TcpListener, TcpStream};
 use tokio::sync::watch;
 use tracing::{debug, info};
 
-use crate::cache::SharedMetricCache;
+use crate::cache::{MetricCacheMetadata, SharedMetricCache};
 use crate::macmon_json;
+use crate::runtime_diagnostics::ExporterDiagnostics;
 use telemon_core::config::AppConfig;
 use telemon_core::metrics::encode;
 
@@ -15,15 +16,19 @@ use telemon_core::metrics::encode;
 struct HttpState {
     dynamic_cache: SharedMetricCache,
     static_cache: SharedMetricCache,
+    diagnostics: ExporterDiagnostics,
     metrics_path: String,
     static_metrics_path: String,
     stale_after_seconds: u64,
+    dynamic_scrape_gap_threshold_seconds: u64,
+    static_scrape_gap_threshold_seconds: u64,
 }
 
 pub async fn serve(
     config: &AppConfig,
     dynamic_cache: SharedMetricCache,
     static_cache: SharedMetricCache,
+    diagnostics: ExporterDiagnostics,
     mut shutdown: watch::Receiver<bool>,
 ) -> Result<()> {
     let addr = config.listen_addr()?;
@@ -31,9 +36,17 @@ pub async fn serve(
     let state = Arc::new(HttpState {
         dynamic_cache,
         static_cache,
+        diagnostics,
         metrics_path: config.server.metrics_path.clone(),
         static_metrics_path: config.server.static_metrics_path.clone(),
         stale_after_seconds: config.collection.scrape_cache_stale_after_seconds,
+        dynamic_scrape_gap_threshold_seconds: config.diagnostics.scrape_gap_threshold_seconds,
+        static_scrape_gap_threshold_seconds: config.diagnostics.scrape_gap_threshold_seconds.max(
+            config
+                .collection
+                .static_info_interval_seconds
+                .saturating_mul(2),
+        ),
     });
 
     info!(listen = %addr, "http server listening");
@@ -91,11 +104,15 @@ async fn handle_connection(mut stream: TcpStream, state: Arc<HttpState>) -> Resu
     }
 
     if path == state.metrics_path {
-        let metrics = state
-            .dynamic_cache
-            .read()
-            .map(|cache| encode::encode(&cache.snapshot()))
-            .unwrap_or_default();
+        state.diagnostics.record_scrape(
+            &state.metrics_path,
+            200,
+            state.dynamic_scrape_gap_threshold_seconds,
+        );
+        let (mut samples, dynamic_metadata) = snapshot_and_metadata(&state.dynamic_cache);
+        let (_, static_metadata) = snapshot_and_metadata(&state.static_cache);
+        samples.extend(state.diagnostics.metrics(dynamic_metadata, static_metadata));
+        let metrics = encode::encode(&samples);
         write_response(
             &mut stream,
             200,
@@ -104,11 +121,15 @@ async fn handle_connection(mut stream: TcpStream, state: Arc<HttpState>) -> Resu
         )
         .await?;
     } else if path == state.static_metrics_path {
-        let metrics = state
-            .static_cache
-            .read()
-            .map(|cache| encode::encode(&cache.snapshot()))
-            .unwrap_or_default();
+        state.diagnostics.record_scrape(
+            &state.static_metrics_path,
+            200,
+            state.static_scrape_gap_threshold_seconds,
+        );
+        let (_, dynamic_metadata) = snapshot_and_metadata(&state.dynamic_cache);
+        let (mut samples, static_metadata) = snapshot_and_metadata(&state.static_cache);
+        samples.extend(state.diagnostics.metrics(dynamic_metadata, static_metadata));
+        let metrics = encode::encode(&samples);
         write_response(
             &mut stream,
             200,
@@ -155,6 +176,18 @@ async fn handle_connection(mut stream: TcpStream, state: Arc<HttpState>) -> Resu
     }
 
     Ok(())
+}
+
+fn snapshot_and_metadata(
+    cache: &SharedMetricCache,
+) -> (
+    Vec<telemon_core::metrics::model::MetricSample>,
+    MetricCacheMetadata,
+) {
+    cache
+        .read()
+        .map(|cache| (cache.snapshot(), cache.metadata()))
+        .unwrap_or_default()
 }
 
 async fn write_response(

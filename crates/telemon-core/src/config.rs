@@ -14,6 +14,7 @@ pub struct AppConfig {
     pub collection: CollectionConfig,
     pub adaptive_sampling: AdaptiveSamplingConfig,
     pub collectors: CollectorsConfig,
+    pub diagnostics: DiagnosticsConfig,
     pub logging: LoggingConfig,
 }
 
@@ -101,6 +102,17 @@ pub struct AdaptiveTemperatureConfig {
     pub warm_celsius: f64,
     pub hot_celsius: f64,
     pub critical_celsius: f64,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(default)]
+pub struct DiagnosticsConfig {
+    pub enabled: bool,
+    pub scrape_gap_threshold_seconds: u64,
+    pub scheduler_lag_threshold_seconds: u64,
+    pub log_scrape_gaps: bool,
+    pub log_scheduler_lag: bool,
+    pub log_scrape_interval_changes: bool,
 }
 
 #[derive(Debug, Clone, Default, Serialize, Deserialize)]
@@ -367,6 +379,14 @@ impl AppConfig {
             self.adaptive_sampling.cooldown_seconds,
             "adaptive_sampling.cooldown_seconds",
         )?;
+        validate_positive(
+            self.diagnostics.scrape_gap_threshold_seconds,
+            "diagnostics.scrape_gap_threshold_seconds",
+        )?;
+        validate_positive(
+            self.diagnostics.scheduler_lag_threshold_seconds,
+            "diagnostics.scheduler_lag_threshold_seconds",
+        )?;
         if !(self.adaptive_sampling.temperature.warm_celsius
             < self.adaptive_sampling.temperature.hot_celsius
             && self.adaptive_sampling.temperature.hot_celsius
@@ -630,6 +650,19 @@ impl Default for AdaptiveTemperatureConfig {
             warm_celsius: 60.0,
             hot_celsius: 75.0,
             critical_celsius: 85.0,
+        }
+    }
+}
+
+impl Default for DiagnosticsConfig {
+    fn default() -> Self {
+        Self {
+            enabled: true,
+            scrape_gap_threshold_seconds: 30,
+            scheduler_lag_threshold_seconds: 5,
+            log_scrape_gaps: true,
+            log_scheduler_lag: true,
+            log_scrape_interval_changes: true,
         }
     }
 }
@@ -1059,6 +1092,29 @@ mod tests {
         let mut config = AppConfig::default();
         config.collection.system_interval_seconds = 0;
 
+        assert!(config.validate().is_err());
+    }
+
+    #[test]
+    fn defaults_diagnostics_config() {
+        let config = AppConfig::default();
+
+        assert!(config.diagnostics.enabled);
+        assert_eq!(config.diagnostics.scrape_gap_threshold_seconds, 30);
+        assert_eq!(config.diagnostics.scheduler_lag_threshold_seconds, 5);
+        assert!(config.diagnostics.log_scrape_gaps);
+        assert!(config.diagnostics.log_scheduler_lag);
+        assert!(config.diagnostics.log_scrape_interval_changes);
+    }
+
+    #[test]
+    fn rejects_zero_diagnostics_thresholds() {
+        let mut config = AppConfig::default();
+        config.diagnostics.scrape_gap_threshold_seconds = 0;
+        assert!(config.validate().is_err());
+
+        let mut config = AppConfig::default();
+        config.diagnostics.scheduler_lag_threshold_seconds = 0;
         assert!(config.validate().is_err());
     }
 

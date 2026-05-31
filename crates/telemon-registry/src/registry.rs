@@ -165,6 +165,9 @@ impl DeviceStore {
         let advertised_addr = normalize_advertised_addr(&request.advertised_addr);
         let current_ip = target_host(&advertised_addr, &observed_ip);
         let ip_changed = record.current_ip != current_ip;
+        let previous_requested_scrape_interval_seconds = record.requested_scrape_interval_seconds;
+        let requested_scrape_interval_seconds =
+            normalize_requested_scrape_interval_seconds(request.requested_scrape_interval_seconds);
         record.machine_uuid = normalized_machine_uuid(&request.machine_uuid, &record.device_uuid);
         record.user_name = request.user_name;
         record.device_name = request.device_name;
@@ -175,9 +178,18 @@ impl DeviceStore {
         record.observed_ip = observed_ip;
         record.advertised_addr = advertised_addr;
         record.listen_port = request.listen_port;
-        record.requested_scrape_interval_seconds =
-            normalize_requested_scrape_interval_seconds(request.requested_scrape_interval_seconds);
+        record.requested_scrape_interval_seconds = requested_scrape_interval_seconds;
         record.last_seen_timestamp = now;
+        if previous_requested_scrape_interval_seconds != requested_scrape_interval_seconds {
+            info!(
+                device_uuid = %record.device_uuid,
+                device_name = %record.device_name,
+                target_host = %record.current_ip,
+                previous_interval_seconds = previous_requested_scrape_interval_seconds,
+                requested_interval_seconds = requested_scrape_interval_seconds,
+                "device requested scrape interval changed"
+            );
+        }
         Some((record.clone(), ip_changed))
     }
 

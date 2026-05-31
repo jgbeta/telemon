@@ -8,6 +8,7 @@ pub mod http;
 pub mod macmon_json;
 pub mod registration;
 pub mod runtime;
+pub mod runtime_diagnostics;
 pub mod scheduler;
 pub mod service;
 

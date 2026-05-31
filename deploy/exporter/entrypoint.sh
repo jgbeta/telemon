@@ -150,6 +150,14 @@ collectors:
     expose_gpu_uuid: $(bool_value "$NVIDIA_EXPOSE_GPU_UUID")
     fan_speed_enabled: $(bool_value "$NVIDIA_FAN_SPEED_ENABLED")
 
+diagnostics:
+  enabled: true
+  scrape_gap_threshold_seconds: 30
+  scheduler_lag_threshold_seconds: 5
+  log_scrape_gaps: true
+  log_scheduler_lag: true
+  log_scrape_interval_changes: true
+
 logging:
   level: "$(yaml_escape "${TELEMON_LOG_LEVEL:-info}")"
 CONFIG

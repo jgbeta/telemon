@@ -453,6 +453,14 @@ collectors:
     expose_gpu_uuid: false
     fan_speed_enabled: true
 
+diagnostics:
+  enabled: true
+  scrape_gap_threshold_seconds: 30
+  scheduler_lag_threshold_seconds: 5
+  log_scrape_gaps: true
+  log_scheduler_lag: true
+  log_scrape_interval_changes: true
+
 logging:
   level: "info"
 CONFIG
