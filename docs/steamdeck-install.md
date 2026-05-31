@@ -74,11 +74,34 @@ bash install-steamdeck.sh \
   --device-name steam-deck
 ```
 
+To test experimental FPS/frame-time telemetry, add `--enable-fps` and regenerate
+the config with `--force-config` if a previous config already exists:
+
+```bash
+bash install-steamdeck.sh \
+  --registry-server registry.example.local:9186 \
+  --enrollment-token change-me \
+  --user-name example-user \
+  --device-name steam-deck \
+  --enable-fps \
+  --force-config
+```
+
 The bundled installer can find the bundled `telemon-exporter` binary automatically.
 
 ## Enabled Deck Telemetry
 
 The generated Steam Deck profile enables Linux `hwmon`, `/proc` system metrics, `linux_power_supply`, `linux_amdgpu`, and optional `steam_deck_game_state` sampling detection. The AMDGPU collector reads Steam Deck/APU `gpu_metrics` when available for CPU temperature, APU power, GPU clocks, and throttle flags. Gamescope detection is non-fatal; Telemon reads Gamescope X11 atoms first, can discover Steam's `DISPLAY`/`XAUTHORITY`, and falls back to Desktop active-window or Steam process-tree detection before returning to temperature-based adaptive sampling.
+
+When `--enable-fps` is used, the profile also enables the gated `/fps` endpoint
+and the experimental Gamescope/MangoApp frame source. Telemon exports rolling
+aggregate FPS, frame-time, 1% low, 0.1% low, 1% high, and pacing jitter metrics.
+It does not export raw per-frame samples. Game names are resolved locally from
+Steam `appmanifest_<appid>.acf` files when available.
+
+The Gamescope/MangoApp source reads a System V message queue and can conflict
+with MangoHUD/mangoapp because queue reads consume messages. Keep FPS disabled
+unless you are actively testing Telemon FPS telemetry.
 
 ## Verify
 
@@ -91,6 +114,7 @@ curl http://127.0.0.1:9185/healthz
 curl http://127.0.0.1:9185/readyz
 curl http://127.0.0.1:9185/metrics
 curl http://127.0.0.1:9185/metrics/static
+curl http://127.0.0.1:9185/fps
 ```
 
 From the Prometheus host, validate that the Deck is reachable on the LAN:
@@ -98,6 +122,7 @@ From the Prometheus host, validate that the Deck is reachable on the LAN:
 ```bash
 curl http://<steam-deck-lan-ip>:9185/metrics
 curl http://<steam-deck-lan-ip>:9185/metrics/static
+curl http://<steam-deck-lan-ip>:9185/fps
 ```
 
 The installer does not change SteamOS firewall or router settings. If the local curl works but the Prometheus host cannot scrape, debug LAN reachability to TCP port `9185`.
@@ -135,4 +160,4 @@ rm -rf ~/.config/telemon ~/.local/state/telemon/exporter
 
 ## Current Limits
 
-This phase only installs the existing native Linux exporter as a Steam Deck user service. It does not add Steam Deck-specific collectors, Gamescope game-state sampling overrides, `/fps`, fan control, TDP control, or MangoHUD-style frame timing metrics yet.
+FPS telemetry is experimental and currently depends on Gamescope/MangoApp queue availability. If `/fps` reports `game_frame_source_supported 0`, normal hardware telemetry and game-state sampling can still be working correctly. Fan control and TDP control are not implemented.

@@ -3,6 +3,7 @@ server:
   listen: "0.0.0.0:9185"
   metrics_path: "/metrics"
   static_metrics_path: "/metrics/static"
+  fps_metrics_path: "/fps"
 
 identity:
   user_name: ""
@@ -105,6 +106,20 @@ collectors:
     auto_discover_steam_display: true
     desktop_fallback_enabled: true
     process_fallback_enabled: true
+
+  steam_deck_fps:
+    enabled: false
+    windows_seconds: [1, 5, 60]
+    include_appid_label: true
+    include_game_name_label: true
+    max_frame_time_milliseconds: 1000
+    poll_interval_milliseconds: 100
+    max_messages_per_poll: 512
+    gamescope_mangoapp:
+      enabled: false
+      ftok_path: "mangoapp"
+      project_id: 65
+    steam_library_roots: []
 
   nvidia_nvml:
     enabled: true

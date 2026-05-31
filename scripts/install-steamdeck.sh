@@ -28,6 +28,7 @@ ADVERTISED_ADDR="${TELEMON_ADVERTISED_ADDR:-}"
 FORCE_CONFIG=false
 ENABLE_LINGER=false
 DRY_RUN=false
+ENABLE_FPS="${TELEMON_ENABLE_FPS:-false}"
 
 log() {
   printf '[telemon-steamdeck] %s\n' "$*"
@@ -72,13 +73,14 @@ Options:
   --advertised-addr HOST       Optional scrape host/IP sent to the registry.
   --force-config               Replace existing config after writing a timestamped backup.
   --enable-linger              Run sudo loginctl enable-linger deck after install.
+  --enable-fps                 Enable experimental /fps Gamescope/MangoApp frame metrics.
   --dry-run                    Resolve inputs and print planned paths without installing.
   -h, --help                   Show this help.
 
 Environment fallbacks:
   TELEMON_ARTIFACT, TELEMON_BINARY, TELEMON_REGISTRY_SERVER,
   TELEMON_ENROLLMENT_TOKEN, TELEMON_USER_NAME, TELEMON_DEVICE_NAME,
-  TELEMON_MACHINE_UUID, TELEMON_ADVERTISED_ADDR
+  TELEMON_MACHINE_UUID, TELEMON_ADVERTISED_ADDR, TELEMON_ENABLE_FPS
 USAGE
 }
 
@@ -132,6 +134,10 @@ while [ "$#" -gt 0 ]; do
       ENABLE_LINGER=true
       shift
       ;;
+    --enable-fps)
+      ENABLE_FPS=true
+      shift
+      ;;
     --dry-run)
       DRY_RUN=true
       shift
@@ -159,6 +165,20 @@ while [ "$#" -gt 0 ]; do
       ;;
   esac
 done
+
+case "$ENABLE_FPS" in
+  true|false)
+    ;;
+  TRUE|True|1|yes|YES|Yes|on|ON|On)
+    ENABLE_FPS=true
+    ;;
+  FALSE|False|0|no|NO|No|off|OFF|Off)
+    ENABLE_FPS=false
+    ;;
+  *)
+    die "invalid TELEMON_ENABLE_FPS value: $ENABLE_FPS"
+    ;;
+esac
 
 require_command() {
   command -v "$1" >/dev/null 2>&1 || die "missing required command: $1"
@@ -367,7 +387,7 @@ write_config() {
   fi
 
   if [ "$DRY_RUN" = true ]; then
-    log "would write config to $CONFIG_FILE (registration_enabled=$registration_enabled, device_name=$DEVICE_NAME)"
+    log "would write config to $CONFIG_FILE (registration_enabled=$registration_enabled, device_name=$DEVICE_NAME, fps_enabled=$ENABLE_FPS)"
     return
   fi
 
@@ -376,8 +396,8 @@ write_config() {
 
   if [ -f "$CONFIG_FILE" ] && [ "$FORCE_CONFIG" != true ]; then
     log "preserving existing config: $CONFIG_FILE"
-    if [ -n "$REGISTRY_SERVER" ] || [ -n "$ENROLLMENT_TOKEN" ] || [ -n "$MACHINE_UUID" ] || [ -n "$ADVERTISED_ADDR" ]; then
-      warn "registration and identity options were provided, but existing config was preserved; use --force-config to rewrite it"
+    if [ -n "$REGISTRY_SERVER" ] || [ -n "$ENROLLMENT_TOKEN" ] || [ -n "$MACHINE_UUID" ] || [ -n "$ADVERTISED_ADDR" ] || [ "$ENABLE_FPS" = true ]; then
+      warn "registration, identity, or FPS options were provided, but existing config was preserved; use --force-config to rewrite it"
     fi
     return
   fi
@@ -403,6 +423,7 @@ server:
   listen: "0.0.0.0:${LISTEN_PORT}"
   metrics_path: "/metrics"
   static_metrics_path: "/metrics/static"
+  fps_metrics_path: "/fps"
 
 identity:
   user_name: "$user_name"
@@ -504,6 +525,20 @@ collectors:
     desktop_fallback_enabled: true
     process_fallback_enabled: true
 
+  steam_deck_fps:
+    enabled: $ENABLE_FPS
+    windows_seconds: [1, 5, 60]
+    include_appid_label: true
+    include_game_name_label: true
+    max_frame_time_milliseconds: 1000
+    poll_interval_milliseconds: 100
+    max_messages_per_poll: 512
+    gamescope_mangoapp:
+      enabled: $ENABLE_FPS
+      ftok_path: "$HOME/mangoapp"
+      project_id: 65
+    steam_library_roots: []
+
   nvidia_nvml:
     enabled: false
     library_paths: []
@@ -552,6 +587,11 @@ diagnostics:
 logging:
   level: "info"
 YAML
+
+  if [ "$ENABLE_FPS" = true ]; then
+    : > "$HOME/mangoapp"
+    log "ensured MangoApp ftok marker: $HOME/mangoapp"
+  fi
 
   log "wrote config: $CONFIG_FILE"
 }

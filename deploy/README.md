@@ -81,10 +81,12 @@ scrape_configs:
         refresh_interval: 30s
 ```
 
-The full Prometheus config includes `15s`, `10s`, `5s`, and `1s` dynamic jobs.
-Exporters publish `exporter_requested_scrape_interval_seconds`; the registry
-places each device in the matching service-discovery endpoint. Each dynamic
-scrape still includes all enabled dynamic sensor metrics for that exporter.
+The full Prometheus config includes `15s`, `10s`, `5s`, and `1s` dynamic jobs,
+plus an optional `telemon-fps` job that scrapes `/fps` from devices currently
+in the `1s` bucket. Exporters publish `exporter_requested_scrape_interval_seconds`;
+the registry places each device in the matching service-discovery endpoint.
+Each dynamic scrape still includes all enabled dynamic sensor metrics for that
+exporter.
 Long-term storage reduction should be handled later with downsampling or
 retention policy rather than per-sensor scrape schedules.
 

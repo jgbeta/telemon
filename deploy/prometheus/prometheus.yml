@@ -35,6 +35,14 @@ scrape_configs:
       - url: "http://hub:9186/prometheus/sd/1s"
         refresh_interval: 5s
 
+  - job_name: "telemon-fps"
+    metrics_path: /fps
+    scrape_interval: 1s
+    scrape_timeout: 1s
+    http_sd_configs:
+      - url: "http://hub:9186/prometheus/sd/1s"
+        refresh_interval: 5s
+
   - job_name: "telemon-static"
     metrics_path: /metrics/static
     scrape_interval: 300s

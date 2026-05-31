@@ -75,3 +75,15 @@ metric,hardware_memory_bytes,gauge,/metrics;/metrics/static,linux_amdgpu;linux_d
 metric,hardware_fan_speed_ratio,gauge,/metrics,nvidia_nvml;windows_lhm_http,component;device_id;sensor;sensor_instance;source;source_driver;gpu_index?,Fan speed ratio from 0 to 1.
 metric,hardware_fan_speed_rpm,gauge,/metrics,linux_hwmon;linux_drm;windows_lhm_http,component;device_id;sensor;sensor_instance;source;source_driver,Fan or pump speed in RPM.
 metric,hardware_state,gauge,/metrics,linux_amdgpu;linux_drm;nvidia_nvml,component;device_id;sensor;state;source;source_driver;gpu_index,Numeric hardware state values.
+metric,game_active,gauge,/fps,steam_deck_fps,source;appid?;game_name?,Whether a game session is active.
+metric,game_focused,gauge,/fps,steam_deck_fps,source;appid?;game_name?,Whether the active game is focused and visible.
+metric,game_identity_info,gauge,/fps,steam_deck_fps,appid;game_name?;source,Game identity resolved from local Steam app manifests.
+metric,game_frame_source_supported,gauge,/fps,steam_deck_fps,source,Whether the frame timing source is available.
+metric,game_frame_source_up,gauge,/fps,steam_deck_fps,source,Whether the frame timing source is currently healthy.
+metric,game_frame_source_samples_total,counter,/fps,steam_deck_fps,source,Total accepted frame timing samples.
+metric,game_frame_source_dropped_total,counter,/fps,steam_deck_fps,source;reason,Frame timing samples dropped by sanity filters.
+metric,game_frame_source_last_sample_timestamp_seconds,gauge,/fps,steam_deck_fps,source,Unix timestamp of the last accepted frame timing sample.
+metric,game_frame_count,gauge,/fps,steam_deck_fps,source;window;appid?;game_name?,Frame count in the rolling window.
+metric,game_frame_rate_fps,gauge,/fps,steam_deck_fps,source;window;stat;method;appid?;game_name?,Average FPS and low/high percentile FPS aggregates.
+metric,game_frametime_seconds,gauge,/fps,steam_deck_fps,source;window;stat;appid?;game_name?,Aggregate frame-time values in seconds.
+metric,game_frame_pacing_jitter_seconds,gauge,/fps,steam_deck_fps,source;window;stat;appid?;game_name?,Adjacent frame-time delta in seconds.

@@ -4,7 +4,7 @@ use tracing::{info, warn};
 
 use crate::adaptive::AdaptiveSamplingState;
 use crate::cache::MetricCache;
-use crate::{diagnostics, game_state, http, runtime_diagnostics, scheduler};
+use crate::{diagnostics, fps, game_state, http, runtime_diagnostics, scheduler};
 use telemon_core::config::AppConfig;
 
 pub async fn run(config: AppConfig) -> Result<()> {
@@ -30,6 +30,11 @@ pub async fn run_with_shutdown(
 ) -> Result<()> {
     let dynamic_cache = MetricCache::shared();
     let static_cache = MetricCache::shared();
+    let game_cache = config
+        .collectors
+        .steam_deck_fps
+        .enabled
+        .then(MetricCache::shared);
     let collectors = diagnostics::build_scheduled_collectors(&config);
     let adaptive_state = AdaptiveSamplingState::new(config.adaptive_sampling.levels.normal_seconds);
     let sampling_override = game_state::sampling_override(&config);
@@ -57,11 +62,19 @@ pub async fn run_with_shutdown(
     } else {
         None
     };
+    let fps_handle = game_cache.as_ref().map(|cache| {
+        tokio::spawn(fps::run_game_fps(
+            config.clone(),
+            cache.clone(),
+            shutdown_rx.clone(),
+        ))
+    });
 
     let http_result = http::serve(
         &config,
         dynamic_cache,
         static_cache,
+        game_cache,
         exporter_diagnostics,
         shutdown_rx,
     )
@@ -69,6 +82,9 @@ pub async fn run_with_shutdown(
     let _ = shutdown_tx.send(true);
     let _ = scheduler_handle.await;
     if let Some(handle) = registration_handle {
+        let _ = handle.await;
+    }
+    if let Some(handle) = fps_handle {
         let _ = handle.await;
     }
 

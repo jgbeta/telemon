@@ -8,6 +8,7 @@ CONFIG_FILE="${TELEMON_CONFIG_FILE:-$CONFIG_DIR/generated-exporter.yml}"
 LISTEN="${TELEMON_LISTEN:-0.0.0.0:9185}"
 METRICS_PATH="${TELEMON_METRICS_PATH:-/metrics}"
 STATIC_METRICS_PATH="${TELEMON_STATIC_METRICS_PATH:-/metrics/static}"
+FPS_METRICS_PATH="${TELEMON_FPS_METRICS_PATH:-/fps}"
 USER_NAME="${TELEMON_USER_NAME:-unknown-user}"
 DEVICE_NAME="${TELEMON_DEVICE_NAME:-${HOSTNAME:-unknown-device}}"
 MACHINE_UUID="${TELEMON_MACHINE_UUID:-}"
@@ -97,6 +98,7 @@ server:
   listen: "$(yaml_escape "$LISTEN")"
   metrics_path: "$(yaml_escape "$METRICS_PATH")"
   static_metrics_path: "$(yaml_escape "$STATIC_METRICS_PATH")"
+  fps_metrics_path: "$(yaml_escape "$FPS_METRICS_PATH")"
 
 identity:
   user_name: "$(yaml_escape "$USER_NAME")"
@@ -143,6 +145,28 @@ collectors:
     expose_storage_model: $(bool_value "$LINUX_HWMON_EXPOSE_STORAGE_MODEL")
     sensor_allowlist: $(yaml_csv_list "${TELEMON_LINUX_HWMON_ALLOWLIST:-}")
     sensor_denylist: $(yaml_csv_list "${TELEMON_LINUX_HWMON_DENYLIST:-}")
+  steam_deck_game_state:
+    enabled: $(bool_value "${TELEMON_STEAM_DECK_GAME_STATE_ENABLED:-false}")
+    poll_interval_seconds: ${TELEMON_STEAM_DECK_GAME_STATE_POLL_INTERVAL_SECONDS:-1}
+    stop_debounce_seconds: ${TELEMON_STEAM_DECK_GAME_STATE_STOP_DEBOUNCE_SECONDS:-5}
+    xprop_path: "$(yaml_escape "${TELEMON_STEAM_DECK_GAME_STATE_XPROP_PATH:-xprop}")"
+    display: "$(yaml_escape "${TELEMON_STEAM_DECK_GAME_STATE_DISPLAY:-:0}")"
+    auto_discover_steam_display: $(bool_value "${TELEMON_STEAM_DECK_GAME_STATE_AUTO_DISCOVER_STEAM_DISPLAY:-true}")
+    desktop_fallback_enabled: $(bool_value "${TELEMON_STEAM_DECK_GAME_STATE_DESKTOP_FALLBACK_ENABLED:-true}")
+    process_fallback_enabled: $(bool_value "${TELEMON_STEAM_DECK_GAME_STATE_PROCESS_FALLBACK_ENABLED:-true}")
+  steam_deck_fps:
+    enabled: $(bool_value "${TELEMON_STEAM_DECK_FPS_ENABLED:-false}")
+    windows_seconds: [${TELEMON_STEAM_DECK_FPS_WINDOWS_SECONDS:-1, 5, 60}]
+    include_appid_label: $(bool_value "${TELEMON_STEAM_DECK_FPS_INCLUDE_APPID_LABEL:-true}")
+    include_game_name_label: $(bool_value "${TELEMON_STEAM_DECK_FPS_INCLUDE_GAME_NAME_LABEL:-true}")
+    max_frame_time_milliseconds: ${TELEMON_STEAM_DECK_FPS_MAX_FRAME_TIME_MILLISECONDS:-1000}
+    poll_interval_milliseconds: ${TELEMON_STEAM_DECK_FPS_POLL_INTERVAL_MILLISECONDS:-100}
+    max_messages_per_poll: ${TELEMON_STEAM_DECK_FPS_MAX_MESSAGES_PER_POLL:-512}
+    gamescope_mangoapp:
+      enabled: $(bool_value "${TELEMON_STEAM_DECK_FPS_MANGOAPP_ENABLED:-false}")
+      ftok_path: "$(yaml_escape "${TELEMON_STEAM_DECK_FPS_MANGOAPP_FTOK_PATH:-mangoapp}")"
+      project_id: ${TELEMON_STEAM_DECK_FPS_MANGOAPP_PROJECT_ID:-65}
+    steam_library_roots: $(yaml_csv_list "${TELEMON_STEAM_DECK_FPS_STEAM_LIBRARY_ROOTS:-}")
   nvidia_nvml:
     enabled: $(bool_value "$NVIDIA_NVML_ENABLED")
     library_paths: $(yaml_csv_list "${TELEMON_NVIDIA_LIBRARY_PATHS:-}")

@@ -31,6 +31,7 @@ pub struct ServerConfig {
     pub listen: String,
     pub metrics_path: String,
     pub static_metrics_path: String,
+    pub fps_metrics_path: String,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -127,6 +128,7 @@ pub struct CollectorsConfig {
     pub linux_amdgpu: LinuxAmdgpuConfig,
     pub linux_drm: LinuxDrmConfig,
     pub steam_deck_game_state: SteamDeckGameStateConfig,
+    pub steam_deck_fps: SteamDeckFpsConfig,
     pub nvidia_nvml: NvidiaNvmlConfig,
     pub windows_baseline: WindowsBaselineConfig,
     pub windows_inventory: WindowsInventoryConfig,
@@ -222,6 +224,28 @@ pub struct SteamDeckGameStateConfig {
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(default)]
+pub struct SteamDeckFpsConfig {
+    pub enabled: bool,
+    pub windows_seconds: Vec<u64>,
+    pub include_appid_label: bool,
+    pub include_game_name_label: bool,
+    pub max_frame_time_milliseconds: u64,
+    pub poll_interval_milliseconds: u64,
+    pub max_messages_per_poll: u64,
+    pub gamescope_mangoapp: GamescopeMangoappConfig,
+    pub steam_library_roots: Vec<PathBuf>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(default)]
+pub struct GamescopeMangoappConfig {
+    pub enabled: bool,
+    pub ftok_path: PathBuf,
+    pub project_id: i32,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(default)]
 pub struct NvidiaNvmlConfig {
     pub enabled: bool,
     pub library_paths: Vec<PathBuf>,
@@ -301,8 +325,14 @@ impl AppConfig {
         if !self.server.static_metrics_path.starts_with('/') {
             bail!("server.static_metrics_path must start with /");
         }
-        if self.server.static_metrics_path == self.server.metrics_path {
-            bail!("server.static_metrics_path must differ from server.metrics_path");
+        if !self.server.fps_metrics_path.starts_with('/') {
+            bail!("server.fps_metrics_path must start with /");
+        }
+        if self.server.static_metrics_path == self.server.metrics_path
+            || self.server.fps_metrics_path == self.server.metrics_path
+            || self.server.fps_metrics_path == self.server.static_metrics_path
+        {
+            bail!("server metrics paths must be distinct");
         }
 
         if self.registration.enabled {
@@ -431,6 +461,46 @@ impl AppConfig {
                 .is_empty()
         {
             bail!("collectors.steam_deck_game_state.xprop_path must not be empty when enabled");
+        }
+        validate_positive(
+            self.collectors.steam_deck_fps.poll_interval_milliseconds,
+            "collectors.steam_deck_fps.poll_interval_milliseconds",
+        )?;
+        validate_positive(
+            self.collectors.steam_deck_fps.max_messages_per_poll,
+            "collectors.steam_deck_fps.max_messages_per_poll",
+        )?;
+        validate_positive(
+            self.collectors.steam_deck_fps.max_frame_time_milliseconds,
+            "collectors.steam_deck_fps.max_frame_time_milliseconds",
+        )?;
+        if self.collectors.steam_deck_fps.enabled {
+            if self.collectors.steam_deck_fps.windows_seconds.is_empty() {
+                bail!("collectors.steam_deck_fps.windows_seconds must not be empty when enabled");
+            }
+            for (index, value) in self
+                .collectors
+                .steam_deck_fps
+                .windows_seconds
+                .iter()
+                .enumerate()
+            {
+                validate_positive(
+                    *value,
+                    &format!("collectors.steam_deck_fps.windows_seconds[{index}]"),
+                )?;
+            }
+        }
+        if self.collectors.steam_deck_fps.gamescope_mangoapp.enabled
+            && self
+                .collectors
+                .steam_deck_fps
+                .gamescope_mangoapp
+                .ftok_path
+                .as_os_str()
+                .is_empty()
+        {
+            bail!("collectors.steam_deck_fps.gamescope_mangoapp.ftok_path must not be empty when enabled");
         }
         if self.collectors.windows_lhm_http.enabled {
             if self.collectors.windows_lhm_http.url.trim().is_empty() {
@@ -565,6 +635,7 @@ impl Default for ServerConfig {
             listen: "127.0.0.1:9185".to_string(),
             metrics_path: "/metrics".to_string(),
             static_metrics_path: "/metrics/static".to_string(),
+            fps_metrics_path: "/fps".to_string(),
         }
     }
 }
@@ -763,6 +834,32 @@ impl Default for SteamDeckGameStateConfig {
             auto_discover_steam_display: true,
             desktop_fallback_enabled: true,
             process_fallback_enabled: true,
+        }
+    }
+}
+
+impl Default for SteamDeckFpsConfig {
+    fn default() -> Self {
+        Self {
+            enabled: false,
+            windows_seconds: vec![1, 5, 60],
+            include_appid_label: true,
+            include_game_name_label: true,
+            max_frame_time_milliseconds: 1_000,
+            poll_interval_milliseconds: 100,
+            max_messages_per_poll: 512,
+            gamescope_mangoapp: GamescopeMangoappConfig::default(),
+            steam_library_roots: Vec::new(),
+        }
+    }
+}
+
+impl Default for GamescopeMangoappConfig {
+    fn default() -> Self {
+        Self {
+            enabled: false,
+            ftok_path: PathBuf::from("mangoapp"),
+            project_id: 65,
         }
     }
 }
@@ -999,6 +1096,39 @@ mod tests {
                 .steam_deck_game_state
                 .process_fallback_enabled
         );
+        assert!(!config.collectors.steam_deck_fps.enabled);
+        assert_eq!(
+            config.collectors.steam_deck_fps.windows_seconds,
+            vec![1, 5, 60]
+        );
+        assert!(config.collectors.steam_deck_fps.include_appid_label);
+        assert!(config.collectors.steam_deck_fps.include_game_name_label);
+        assert_eq!(
+            config.collectors.steam_deck_fps.max_frame_time_milliseconds,
+            1_000
+        );
+        assert_eq!(
+            config.collectors.steam_deck_fps.poll_interval_milliseconds,
+            100
+        );
+        assert_eq!(config.collectors.steam_deck_fps.max_messages_per_poll, 512);
+        assert!(!config.collectors.steam_deck_fps.gamescope_mangoapp.enabled);
+        assert_eq!(
+            config
+                .collectors
+                .steam_deck_fps
+                .gamescope_mangoapp
+                .ftok_path,
+            PathBuf::from("mangoapp")
+        );
+        assert_eq!(
+            config
+                .collectors
+                .steam_deck_fps
+                .gamescope_mangoapp
+                .project_id,
+            65
+        );
     }
 
     #[test]
@@ -1132,6 +1262,27 @@ mod tests {
         config.collectors.steam_deck_game_state.enabled = true;
         config.collectors.steam_deck_game_state.xprop_path = String::new();
 
+        assert!(config.validate().is_err());
+    }
+
+    #[test]
+    fn rejects_invalid_steam_deck_fps_config() {
+        let mut config = AppConfig::default();
+        config.collectors.steam_deck_fps.enabled = true;
+        config.collectors.steam_deck_fps.windows_seconds.clear();
+        assert!(config.validate().is_err());
+
+        let mut config = AppConfig::default();
+        config.collectors.steam_deck_fps.poll_interval_milliseconds = 0;
+        assert!(config.validate().is_err());
+
+        let mut config = AppConfig::default();
+        config.collectors.steam_deck_fps.gamescope_mangoapp.enabled = true;
+        config
+            .collectors
+            .steam_deck_fps
+            .gamescope_mangoapp
+            .ftok_path = PathBuf::new();
         assert!(config.validate().is_err());
     }
 

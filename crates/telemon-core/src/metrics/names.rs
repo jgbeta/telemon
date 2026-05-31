@@ -5,6 +5,7 @@ pub const ALLOWED_PREFIXES: &[&str] = &[
     "network_",
     "exporter_",
     "device_",
+    "game_",
     "macmon_",
 ];
 
@@ -89,6 +90,19 @@ pub const EXPORTER_MACOS_MACMON_REINITIALIZATIONS_TOTAL: &str =
     "exporter_macos_macmon_reinitializations_total";
 pub const EXPORTER_MACOS_MACMON_INVALID_SAMPLES_TOTAL: &str =
     "exporter_macos_macmon_invalid_samples_total";
+pub const GAME_ACTIVE: &str = "game_active";
+pub const GAME_FOCUSED: &str = "game_focused";
+pub const GAME_IDENTITY_INFO: &str = "game_identity_info";
+pub const GAME_FRAME_SOURCE_SUPPORTED: &str = "game_frame_source_supported";
+pub const GAME_FRAME_SOURCE_UP: &str = "game_frame_source_up";
+pub const GAME_FRAME_SOURCE_SAMPLES_TOTAL: &str = "game_frame_source_samples_total";
+pub const GAME_FRAME_SOURCE_DROPPED_TOTAL: &str = "game_frame_source_dropped_total";
+pub const GAME_FRAME_SOURCE_LAST_SAMPLE_TIMESTAMP_SECONDS: &str =
+    "game_frame_source_last_sample_timestamp_seconds";
+pub const GAME_FRAME_COUNT: &str = "game_frame_count";
+pub const GAME_FRAME_RATE_FPS: &str = "game_frame_rate_fps";
+pub const GAME_FRAMETIME_SECONDS: &str = "game_frametime_seconds";
+pub const GAME_FRAME_PACING_JITTER_SECONDS: &str = "game_frame_pacing_jitter_seconds";
 pub const MACMON_CPU_TEMP_CELSIUS: &str = "macmon_cpu_temp_celsius";
 pub const MACMON_GPU_TEMP_CELSIUS: &str = "macmon_gpu_temp_celsius";
 pub const MACMON_CPU_POWER_WATTS: &str = "macmon_cpu_power_watts";

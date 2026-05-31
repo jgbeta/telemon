@@ -2,6 +2,7 @@ pub mod adaptive;
 pub mod cache;
 pub mod cli;
 pub mod diagnostics;
+pub mod fps;
 pub mod game_state;
 pub mod hardware_inspect;
 pub mod http;

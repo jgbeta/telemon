@@ -1,3 +1,4 @@
+pub mod game;
 pub mod gpu;
 pub mod linux;
 pub mod macos;
