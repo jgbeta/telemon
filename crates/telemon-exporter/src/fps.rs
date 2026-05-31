@@ -16,6 +16,7 @@ use telemon_core::metrics::names;
 
 const GAMESCOPE_STATE_SOURCE: &str = "gamescope";
 const GAMESCOPE_FRAME_SOURCE: &str = "gamescope_mangoapp";
+const FRAME_SOURCE_UP_STALE_AFTER: Duration = Duration::from_secs(2);
 
 pub fn disabled_metrics() -> Vec<MetricSample> {
     let source_labels = labels(&[("source", GAMESCOPE_FRAME_SOURCE)]);
@@ -102,7 +103,11 @@ struct GameFpsRuntime {
     samples_total: u64,
     dropped_zero_total: u64,
     dropped_too_large_total: u64,
+    dropped_invalid_sentinel_total: u64,
+    dropped_unsupported_version_total: u64,
+    dropped_too_short_total: u64,
     last_sample_timestamp_seconds: Option<u64>,
+    last_sample_instant: Option<Instant>,
     start: Instant,
     last_open_attempt: Option<Instant>,
     #[cfg(target_os = "linux")]
@@ -138,7 +143,11 @@ impl GameFpsRuntime {
             samples_total: 0,
             dropped_zero_total: 0,
             dropped_too_large_total: 0,
+            dropped_invalid_sentinel_total: 0,
+            dropped_unsupported_version_total: 0,
+            dropped_too_short_total: 0,
             last_sample_timestamp_seconds: None,
+            last_sample_instant: None,
             start: Instant::now(),
             last_open_attempt: None,
             #[cfg(target_os = "linux")]
@@ -160,6 +169,7 @@ impl GameFpsRuntime {
             self.set_current_game(None);
             self.clear_windows();
             self.try_open_reader();
+            self.source_up = false;
             return;
         }
 
@@ -266,6 +276,30 @@ impl GameFpsRuntime {
             labels(&[("source", GAMESCOPE_FRAME_SOURCE), ("reason", "too_large")]),
             self.dropped_too_large_total as f64,
         ));
+        metrics.push(MetricSample::counter(
+            names::GAME_FRAME_SOURCE_DROPPED_TOTAL,
+            "Total frame timing samples dropped by sanity filters.",
+            labels(&[
+                ("source", GAMESCOPE_FRAME_SOURCE),
+                ("reason", "invalid_sentinel"),
+            ]),
+            self.dropped_invalid_sentinel_total as f64,
+        ));
+        metrics.push(MetricSample::counter(
+            names::GAME_FRAME_SOURCE_DROPPED_TOTAL,
+            "Total frame timing samples dropped by sanity filters.",
+            labels(&[
+                ("source", GAMESCOPE_FRAME_SOURCE),
+                ("reason", "unsupported_version"),
+            ]),
+            self.dropped_unsupported_version_total as f64,
+        ));
+        metrics.push(MetricSample::counter(
+            names::GAME_FRAME_SOURCE_DROPPED_TOTAL,
+            "Total frame timing samples dropped by sanity filters.",
+            labels(&[("source", GAMESCOPE_FRAME_SOURCE), ("reason", "too_short")]),
+            self.dropped_too_short_total as f64,
+        ));
         if let Some(timestamp) = self.last_sample_timestamp_seconds {
             metrics.push(MetricSample::gauge(
                 names::GAME_FRAME_SOURCE_LAST_SAMPLE_TIMESTAMP_SECONDS,
@@ -317,13 +351,19 @@ impl GameFpsRuntime {
     fn try_open_reader(&mut self) {
         #[cfg(target_os = "linux")]
         {
-            if !self.config.gamescope_mangoapp.enabled || self.reader.is_some() {
-                self.source_supported = self.reader.is_some();
-                self.source_up = self.reader.is_some();
+            if !self.config.gamescope_mangoapp.enabled {
+                self.source_supported = false;
+                self.source_up = false;
                 return;
             }
 
             let now = Instant::now();
+            if self.reader.is_some() {
+                self.source_supported = true;
+                self.refresh_source_up(now, self.last_state.is_game_running());
+                return;
+            }
+
             if self
                 .last_open_attempt
                 .is_some_and(|last| now.duration_since(last) < Duration::from_secs(1))
@@ -339,7 +379,7 @@ impl GameFpsRuntime {
                 Ok(reader) => {
                     self.reader = Some(reader);
                     self.source_supported = true;
-                    self.source_up = true;
+                    self.refresh_source_up(now, self.last_state.is_game_running());
                     debug!(source = GAMESCOPE_FRAME_SOURCE, "game frame source opened");
                 }
                 Err(error) => {
@@ -354,6 +394,13 @@ impl GameFpsRuntime {
             self.source_supported = false;
             self.source_up = false;
         }
+    }
+
+    fn refresh_source_up(&mut self, now: Instant, active: bool) {
+        self.source_up = active
+            && self
+                .last_sample_instant
+                .is_some_and(|last| now.duration_since(last) <= FRAME_SOURCE_UP_STALE_AFTER);
     }
 
     fn read_frames(&mut self) -> Vec<FrameInput> {
@@ -372,7 +419,6 @@ impl GameFpsRuntime {
             match reader.read_available(max_messages, &mut samples) {
                 Ok(result) => {
                     self.source_supported = true;
-                    self.source_up = true;
                     self.samples_total = self
                         .samples_total
                         .saturating_add(result.samples_read as u64);
@@ -381,9 +427,20 @@ impl GameFpsRuntime {
                     self.dropped_too_large_total = self
                         .dropped_too_large_total
                         .saturating_add(result.dropped_too_large);
+                    self.dropped_invalid_sentinel_total = self
+                        .dropped_invalid_sentinel_total
+                        .saturating_add(result.dropped_invalid_sentinel);
+                    self.dropped_unsupported_version_total = self
+                        .dropped_unsupported_version_total
+                        .saturating_add(result.dropped_unsupported_version);
+                    self.dropped_too_short_total = self
+                        .dropped_too_short_total
+                        .saturating_add(result.dropped_too_short);
                     if result.samples_read > 0 {
                         self.last_sample_timestamp_seconds = Some(unix_timestamp_seconds());
+                        self.last_sample_instant = Some(Instant::now());
                     }
+                    self.refresh_source_up(Instant::now(), self.last_state.is_game_running());
                     samples
                         .into_iter()
                         .map(|sample| FrameInput {

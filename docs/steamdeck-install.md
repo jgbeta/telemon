@@ -94,14 +94,19 @@ The bundled installer can find the bundled `telemon-exporter` binary automatical
 The generated Steam Deck profile enables Linux `hwmon`, `/proc` system metrics, `linux_power_supply`, `linux_amdgpu`, and optional `steam_deck_game_state` sampling detection. The AMDGPU collector reads Steam Deck/APU `gpu_metrics` when available for CPU temperature, APU power, GPU clocks, and throttle flags. Gamescope detection is non-fatal; Telemon reads Gamescope X11 atoms first, can discover Steam's `DISPLAY`/`XAUTHORITY`, and falls back to Desktop active-window or Steam process-tree detection before returning to temperature-based adaptive sampling.
 
 When `--enable-fps` is used, the profile also enables the gated `/fps` endpoint
-and the experimental Gamescope/MangoApp frame source. Telemon exports rolling
-aggregate FPS, frame-time, 1% low, 0.1% low, 1% high, and pacing jitter metrics.
-It does not export raw per-frame samples. Game names are resolved locally from
-Steam `appmanifest_<appid>.acf` files when available.
+and the experimental Gamescope/MangoApp frame source. Telemon creates or opens
+the same System V message queue that MangoHUD/mangoapp uses, then reads
+Gamescope frame-time messages directly. MangoHUD is not required, but Gamescope
+must still emit MangoApp frame messages for FPS metrics to appear.
 
-The Gamescope/MangoApp source reads a System V message queue and can conflict
-with MangoHUD/mangoapp because queue reads consume messages. Keep FPS disabled
-unless you are actively testing Telemon FPS telemetry.
+Telemon exports rolling aggregate FPS, frame-time, 1% low, 0.1% low, 1% high,
+and pacing jitter metrics. It does not export raw per-frame samples. Game names
+are resolved locally from Steam `appmanifest_<appid>.acf` files when available.
+
+The Gamescope/MangoApp queue is an exclusive-consuming source: queue reads remove
+messages. Running MangoHUD/mangoapp and Telemon FPS telemetry at the same time
+can make them compete for frame samples. Keep FPS disabled unless you are
+actively testing Telemon FPS telemetry.
 
 ## Verify
 
@@ -160,4 +165,4 @@ rm -rf ~/.config/telemon ~/.local/state/telemon/exporter
 
 ## Current Limits
 
-FPS telemetry is experimental and currently depends on Gamescope/MangoApp queue availability. If `/fps` reports `game_frame_source_supported 0`, normal hardware telemetry and game-state sampling can still be working correctly. Fan control and TDP control are not implemented.
+FPS telemetry is experimental and currently depends on Gamescope emitting MangoApp frame messages. If `/fps` reports `game_frame_source_supported 1` but `game_frame_source_up 0`, Telemon opened the queue but has not recently received valid frames. If `supported` is `0`, validate that the configured `ftok_path` exists. Normal hardware telemetry and game-state sampling can still be working correctly. Fan control and TDP control are not implemented.

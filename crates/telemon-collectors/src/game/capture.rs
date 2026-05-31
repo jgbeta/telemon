@@ -151,12 +151,7 @@ pub fn avg_fps_from_frame_times_ns(frame_count: usize, total_ns: u128) -> Option
 }
 
 pub fn tail_threshold_fps(values_ns: &[u64], fraction: f64, tail: Tail) -> Option<f64> {
-    let n = values_ns.len();
-    let k = tail_count(n, fraction)?;
-    let idx = match tail {
-        Tail::Worst => n - k,
-        Tail::Best => k - 1,
-    };
+    let idx = tail_threshold_index(values_ns.len(), fraction, tail)?;
     let mut values = values_ns.to_vec();
     let (_, nth, _) = values.select_nth_unstable(idx);
     fps_from_frame_time_ns(*nth)
@@ -235,13 +230,20 @@ fn tail_count(n: usize, fraction: f64) -> Option<usize> {
 }
 
 fn tail_threshold_fps_from_sorted(sorted_ns: &[u64], fraction: f64, tail: Tail) -> Option<f64> {
-    let n = sorted_ns.len();
-    let k = tail_count(n, fraction)?;
-    let frame_time_ns = match tail {
-        Tail::Worst => sorted_ns[n - k],
-        Tail::Best => sorted_ns[k - 1],
-    };
-    fps_from_frame_time_ns(frame_time_ns)
+    fps_from_frame_time_ns(sorted_ns[tail_threshold_index(sorted_ns.len(), fraction, tail)?])
+}
+
+fn tail_threshold_index(n: usize, fraction: f64, tail: Tail) -> Option<usize> {
+    if n == 0 || !fraction.is_finite() || fraction <= 0.0 || fraction > 1.0 {
+        return None;
+    }
+    let rank = ((n as f64 * fraction) as usize)
+        .saturating_sub(1)
+        .min(n - 1);
+    Some(match tail {
+        Tail::Worst => n - 1 - rank,
+        Tail::Best => rank,
+    })
 }
 
 fn tail_average_fps_from_sorted(sorted_ns: &[u64], fraction: f64, tail: Tail) -> Option<f64> {
@@ -280,6 +282,15 @@ mod tests {
         approx_eq(stats.low_fps_average(0.01).unwrap(), 10.0, 0.000_01);
         approx_eq(stats.high_fps_threshold(0.01).unwrap(), 100.0, 0.000_01);
         approx_eq(stats.high_fps_average(0.01).unwrap(), 100.0, 0.000_01);
+    }
+
+    #[test]
+    fn threshold_low_matches_mangohud_bucket_rule() {
+        let mut frames = vec![10_000_000_u64; 100];
+        frames.push(100_000_000);
+        let stats = CaptureStats::from_frame_times_ns(frames);
+        approx_eq(stats.low_fps_threshold(0.01).unwrap(), 10.0, 0.000_01);
+        assert!(stats.low_fps_average(0.01).unwrap() > 10.0);
     }
 
     #[test]

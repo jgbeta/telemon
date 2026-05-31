@@ -74,10 +74,10 @@ default `honor_labels: false`, conflicting scraped labels can be renamed to
 | `game_active` | gauge | `/fps` | `steam_deck_fps` | `source`, optional `appid`, `game_name` | `1` when a game session is active. |
 | `game_focused` | gauge | `/fps` | `steam_deck_fps` | `source`, optional `appid`, `game_name` | `1` when the active game is focused and visible. |
 | `game_identity_info` | gauge | `/fps` | `steam_deck_fps` | `appid`, optional `game_name`, `source` | Game identity resolved from local Steam app manifests. |
-| `game_frame_source_supported` | gauge | `/fps` | `steam_deck_fps` | `source` | `1` when the frame timing source is available. |
-| `game_frame_source_up` | gauge | `/fps` | `steam_deck_fps` | `source` | `1` when the frame timing source is currently healthy. |
+| `game_frame_source_supported` | gauge | `/fps` | `steam_deck_fps` | `source` | `1` when Telemon opened or created the frame timing queue. |
+| `game_frame_source_up` | gauge | `/fps` | `steam_deck_fps` | `source` | `1` when valid frame samples were received recently while a game is active. |
 | `game_frame_source_samples_total` | counter | `/fps` | `steam_deck_fps` | `source` | Total accepted frame timing samples. |
-| `game_frame_source_dropped_total` | counter | `/fps` | `steam_deck_fps` | `source`, `reason` | Frame timing samples dropped by sanity filters. |
+| `game_frame_source_dropped_total` | counter | `/fps` | `steam_deck_fps` | `source`, `reason` | Frame timing samples dropped by sanity filters. Reasons: `zero`, `too_large`, `invalid_sentinel`, `unsupported_version`, `too_short`. |
 | `game_frame_source_last_sample_timestamp_seconds` | gauge | `/fps` | `steam_deck_fps` | `source` | Unix timestamp of the last accepted frame timing sample. |
 | `game_frame_count` | gauge | `/fps` | `steam_deck_fps` | `source`, `window`, optional `appid`, `game_name` | Frame count in the rolling window. |
 | `game_frame_rate_fps` | gauge | `/fps` | `steam_deck_fps` | `source`, `window`, `stat`, `method`, optional `appid`, `game_name` | Average FPS, 1% low, 0.1% low, and 1% high. |
