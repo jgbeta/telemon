@@ -166,6 +166,7 @@ collectors:
       enabled: $(bool_value "${TELEMON_STEAM_DECK_FPS_MANGOAPP_ENABLED:-false}")
       ftok_path: "$(yaml_escape "${TELEMON_STEAM_DECK_FPS_MANGOAPP_FTOK_PATH:-mangoapp}")"
       project_id: ${TELEMON_STEAM_DECK_FPS_MANGOAPP_PROJECT_ID:-65}
+      legacy_failed_ftok_fallback_enabled: $(bool_value "${TELEMON_STEAM_DECK_FPS_MANGOAPP_LEGACY_FAILED_FTOK_FALLBACK_ENABLED:-false}")
     steam_library_roots: $(yaml_csv_list "${TELEMON_STEAM_DECK_FPS_STEAM_LIBRARY_ROOTS:-}")
   nvidia_nvml:
     enabled: $(bool_value "$NVIDIA_NVML_ENABLED")

@@ -537,6 +537,7 @@ collectors:
       enabled: $ENABLE_FPS
       ftok_path: "$HOME/mangoapp"
       project_id: 65
+      legacy_failed_ftok_fallback_enabled: $ENABLE_FPS
     steam_library_roots: []
 
   nvidia_nvml:

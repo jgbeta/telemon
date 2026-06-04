@@ -103,6 +103,11 @@ Telemon exports rolling aggregate FPS, frame-time, 1% low, 0.1% low, 1% high,
 and pacing jitter metrics. It does not export raw per-frame samples. Game names
 are resolved locally from Steam `appmanifest_<appid>.acf` files when available.
 
+The Steam Deck profile also enables a compatibility fallback for SteamOS builds
+where Gamescope/MangoApp traffic appears on the failed-`ftok("mangoapp", 65)`
+queue key shown by `ipcs -q` as `0xffffffff`. Telemon only attaches to that
+legacy queue if it already exists; it does not create it.
+
 The Gamescope/MangoApp queue is an exclusive-consuming source: queue reads remove
 messages. Running MangoHUD/mangoapp and Telemon FPS telemetry at the same time
 can make them compete for frame samples. Keep FPS disabled unless you are
@@ -165,4 +170,4 @@ rm -rf ~/.config/telemon ~/.local/state/telemon/exporter
 
 ## Current Limits
 
-FPS telemetry is experimental and currently depends on Gamescope emitting MangoApp frame messages. If `/fps` reports `game_frame_source_supported 1` but `game_frame_source_up 0`, Telemon opened the queue but has not recently received valid frames. If `supported` is `0`, validate that the configured `ftok_path` exists. Normal hardware telemetry and game-state sampling can still be working correctly. Fan control and TDP control are not implemented.
+FPS telemetry is experimental and currently depends on Gamescope emitting MangoApp frame messages. If `/fps` reports `game_frame_source_supported 1` but `game_frame_source_up 0`, Telemon opened a candidate queue but has not recently received valid frames. The `queue` label shows whether Telemon is using `configured_ftok` or `legacy_failed_ftok`. If `supported` is `0`, validate that the configured `ftok_path` exists and check whether `ipcs -q` shows a `0xffffffff` queue. Normal hardware telemetry and game-state sampling can still be working correctly. Fan control and TDP control are not implemented.

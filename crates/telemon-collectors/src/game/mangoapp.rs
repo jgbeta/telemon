@@ -4,7 +4,7 @@ use std::mem::{offset_of, size_of, MaybeUninit};
 use std::os::unix::ffi::OsStrExt;
 use std::path::Path;
 
-use libc::c_long;
+use libc::{c_int, c_long, key_t};
 use telemon_core::config::GamescopeMangoappConfig;
 
 const MANGOAPP_FRAME_MESSAGE_TYPE: c_long = 1;
@@ -50,6 +50,15 @@ impl MangoAppReadResult {
             }
         }
     }
+
+    fn has_activity(&self) -> bool {
+        self.samples_read > 0
+            || self.dropped_zero > 0
+            || self.dropped_too_large > 0
+            || self.dropped_invalid_sentinel > 0
+            || self.dropped_unsupported_version > 0
+            || self.dropped_too_short > 0
+    }
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -61,28 +70,150 @@ pub enum MangoAppDropReason {
     TooShort,
 }
 
-pub struct MangoAppFrameReader {
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum MangoAppQueueSource {
+    ConfiguredFtok,
+    LegacyFailedFtok,
+}
+
+impl MangoAppQueueSource {
+    pub fn label(self) -> &'static str {
+        match self {
+            Self::ConfiguredFtok => "configured_ftok",
+            Self::LegacyFailedFtok => "legacy_failed_ftok",
+        }
+    }
+}
+
+#[derive(Debug, Clone, Copy)]
+struct MangoAppQueueReader {
+    source: MangoAppQueueSource,
     queue_id: libc::c_int,
+}
+
+pub struct MangoAppFrameReader {
+    sources: Vec<MangoAppQueueReader>,
+    active_source: Option<MangoAppQueueSource>,
     max_frame_time_ns: u64,
 }
 
 impl MangoAppFrameReader {
     pub fn open(config: &GamescopeMangoappConfig, max_frame_time_ns: u64) -> io::Result<Self> {
-        let queue_id = mangoapp_queue_id(&config.ftok_path, config.project_id)?;
+        let mut sources = Vec::new();
+        let mut first_error = None;
+
+        match configured_mangoapp_queue_id(&config.ftok_path, config.project_id) {
+            Ok(queue_id) => sources.push(MangoAppQueueReader {
+                source: MangoAppQueueSource::ConfiguredFtok,
+                queue_id,
+            }),
+            Err(error) => first_error = Some(error),
+        }
+
+        if config.legacy_failed_ftok_fallback_enabled {
+            match legacy_failed_ftok_queue_id() {
+                Ok(queue_id) => sources.push(MangoAppQueueReader {
+                    source: MangoAppQueueSource::LegacyFailedFtok,
+                    queue_id,
+                }),
+                Err(error) => {
+                    if first_error.is_none() {
+                        first_error = Some(error);
+                    }
+                }
+            }
+        }
+
+        if sources.is_empty() {
+            return Err(first_error.unwrap_or_else(|| {
+                io::Error::new(io::ErrorKind::NotFound, "no MangoApp queues available")
+            }));
+        }
+
         Ok(Self {
-            queue_id,
+            sources,
+            active_source: None,
             max_frame_time_ns,
         })
     }
 
+    pub fn queue_label(&self) -> &'static str {
+        self.active_source
+            .or_else(|| self.sources.first().map(|source| source.source))
+            .map(MangoAppQueueSource::label)
+            .unwrap_or("unavailable")
+    }
+
+    pub fn refresh_sources(&mut self, config: &GamescopeMangoappConfig) {
+        if !config.legacy_failed_ftok_fallback_enabled
+            || self.has_source(MangoAppQueueSource::LegacyFailedFtok)
+        {
+            return;
+        }
+        if let Ok(queue_id) = legacy_failed_ftok_queue_id() {
+            self.sources.push(MangoAppQueueReader {
+                source: MangoAppQueueSource::LegacyFailedFtok,
+                queue_id,
+            });
+        }
+    }
+
+    fn has_source(&self, source: MangoAppQueueSource) -> bool {
+        self.sources
+            .iter()
+            .any(|candidate| candidate.source == source)
+    }
+
     pub fn read_available(
+        &mut self,
+        max_messages: usize,
+        samples: &mut Vec<MangoAppFrameSample>,
+    ) -> io::Result<MangoAppReadResult> {
+        let mut first_activity = None;
+        for index in read_order_for_sources(self.sources.len(), self.active_source_index()) {
+            let mut source_samples = Vec::new();
+            let result = self.read_available_from_source(
+                self.sources[index].queue_id,
+                max_messages,
+                &mut source_samples,
+            )?;
+
+            if result.samples_read > 0 {
+                self.active_source = Some(self.sources[index].source);
+                samples.extend(source_samples);
+                return Ok(result);
+            }
+
+            if first_activity.is_none() && result.has_activity() {
+                first_activity = Some((self.sources[index].source, result));
+            }
+        }
+
+        if let Some((source, result)) = first_activity {
+            self.active_source = Some(source);
+            return Ok(result);
+        }
+
+        Ok(MangoAppReadResult::default())
+    }
+
+    fn active_source_index(&self) -> Option<usize> {
+        self.active_source.and_then(|active| {
+            self.sources
+                .iter()
+                .position(|source| source.source == active)
+        })
+    }
+
+    fn read_available_from_source(
         &self,
+        queue_id: libc::c_int,
         max_messages: usize,
         samples: &mut Vec<MangoAppFrameSample>,
     ) -> io::Result<MangoAppReadResult> {
         let mut result = MangoAppReadResult::default();
         for _ in 0..max_messages {
-            match self.read_one()? {
+            match self.read_one(queue_id)? {
                 Some(MangoAppReadOne::Sample(sample)) => {
                     samples.push(sample);
                     result.samples_read += 1;
@@ -94,12 +225,12 @@ impl MangoAppFrameReader {
         Ok(result)
     }
 
-    fn read_one(&self) -> io::Result<Option<MangoAppReadOne>> {
+    fn read_one(&self, queue_id: libc::c_int) -> io::Result<Option<MangoAppReadOne>> {
         let mut message = MaybeUninit::<MangoAppMsgV1>::zeroed();
         let message_size = size_of::<MangoAppMsgV1>() - size_of::<c_long>();
         let result = unsafe {
             libc::msgrcv(
-                self.queue_id,
+                queue_id,
                 message.as_mut_ptr().cast(),
                 message_size,
                 MANGOAPP_FRAME_MESSAGE_TYPE,
@@ -123,17 +254,54 @@ impl MangoAppFrameReader {
     }
 }
 
+fn read_order_for_sources(source_count: usize, active_index: Option<usize>) -> Vec<usize> {
+    let mut order = Vec::with_capacity(source_count);
+    if let Some(active_index) = active_index.filter(|index| *index < source_count) {
+        order.push(active_index);
+    }
+    for index in 0..source_count {
+        if Some(index) != active_index {
+            order.push(index);
+        }
+    }
+    order
+}
+
 pub fn mangoapp_queue_id(path: &Path, project_id: i32) -> io::Result<libc::c_int> {
+    configured_mangoapp_queue_id(path, project_id)
+}
+
+fn configured_mangoapp_queue_id(path: &Path, project_id: i32) -> io::Result<libc::c_int> {
     let path = CString::new(path.as_os_str().as_bytes())?;
     let key = unsafe { libc::ftok(path.as_ptr(), project_id) };
     if key == -1 {
         return Err(io::Error::last_os_error());
     }
-    let queue_id = unsafe { libc::msgget(key, 0o666 | libc::IPC_CREAT) };
+    msgget_queue_id(key, configured_msgget_flags())
+}
+
+fn legacy_failed_ftok_queue_id() -> io::Result<libc::c_int> {
+    msgget_queue_id(legacy_failed_ftok_key(), legacy_msgget_flags())
+}
+
+fn msgget_queue_id(key: key_t, flags: c_int) -> io::Result<libc::c_int> {
+    let queue_id = unsafe { libc::msgget(key, flags) };
     if queue_id == -1 {
         return Err(io::Error::last_os_error());
     }
     Ok(queue_id)
+}
+
+fn legacy_failed_ftok_key() -> key_t {
+    -1 as key_t
+}
+
+fn configured_msgget_flags() -> c_int {
+    0o666 | libc::IPC_CREAT
+}
+
+fn legacy_msgget_flags() -> c_int {
+    0
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -267,6 +435,38 @@ mod tests {
     #[test]
     fn frame_message_type_is_exactly_one() {
         assert_eq!(MANGOAPP_FRAME_MESSAGE_TYPE, 1);
+    }
+
+    #[test]
+    fn legacy_failed_ftok_source_uses_key_minus_one_without_create() {
+        assert_eq!(legacy_failed_ftok_key(), -1 as key_t);
+        assert_eq!(legacy_msgget_flags() & libc::IPC_CREAT, 0);
+    }
+
+    #[test]
+    fn configured_source_uses_create_flag() {
+        assert_eq!(configured_msgget_flags() & libc::IPC_CREAT, libc::IPC_CREAT);
+    }
+
+    #[test]
+    fn active_source_is_checked_first() {
+        assert_eq!(read_order_for_sources(2, Some(1)), vec![1, 0]);
+        assert_eq!(read_order_for_sources(2, None), vec![0, 1]);
+        assert_eq!(read_order_for_sources(2, Some(9)), vec![0, 1]);
+    }
+
+    #[test]
+    fn source_presence_is_tracked_by_source_kind() {
+        let reader = MangoAppFrameReader {
+            sources: vec![MangoAppQueueReader {
+                source: MangoAppQueueSource::ConfiguredFtok,
+                queue_id: 7,
+            }],
+            active_source: None,
+            max_frame_time_ns: 1_000_000_000,
+        };
+        assert!(reader.has_source(MangoAppQueueSource::ConfiguredFtok));
+        assert!(!reader.has_source(MangoAppQueueSource::LegacyFailedFtok));
     }
 
     #[test]

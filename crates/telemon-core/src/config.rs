@@ -242,6 +242,7 @@ pub struct GamescopeMangoappConfig {
     pub enabled: bool,
     pub ftok_path: PathBuf,
     pub project_id: i32,
+    pub legacy_failed_ftok_fallback_enabled: bool,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -860,6 +861,7 @@ impl Default for GamescopeMangoappConfig {
             enabled: false,
             ftok_path: PathBuf::from("mangoapp"),
             project_id: 65,
+            legacy_failed_ftok_fallback_enabled: false,
         }
     }
 }
@@ -1128,6 +1130,13 @@ mod tests {
                 .gamescope_mangoapp
                 .project_id,
             65
+        );
+        assert!(
+            !config
+                .collectors
+                .steam_deck_fps
+                .gamescope_mangoapp
+                .legacy_failed_ftok_fallback_enabled
         );
     }
 

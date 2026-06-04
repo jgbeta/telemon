@@ -19,7 +19,7 @@ const GAMESCOPE_FRAME_SOURCE: &str = "gamescope_mangoapp";
 const FRAME_SOURCE_UP_STALE_AFTER: Duration = Duration::from_secs(2);
 
 pub fn disabled_metrics() -> Vec<MetricSample> {
-    let source_labels = labels(&[("source", GAMESCOPE_FRAME_SOURCE)]);
+    let source_labels = labels(&[("source", GAMESCOPE_FRAME_SOURCE), ("queue", "disabled")]);
     vec![
         MetricSample::gauge(
             names::GAME_ACTIVE,
@@ -245,7 +245,7 @@ impl GameFpsRuntime {
             ));
         }
 
-        let source_labels = labels(&[("source", GAMESCOPE_FRAME_SOURCE)]);
+        let source_labels = self.frame_source_labels();
         metrics.push(MetricSample::gauge(
             names::GAME_FRAME_SOURCE_SUPPORTED,
             "Whether a game frame timing source is available.",
@@ -267,37 +267,31 @@ impl GameFpsRuntime {
         metrics.push(MetricSample::counter(
             names::GAME_FRAME_SOURCE_DROPPED_TOTAL,
             "Total frame timing samples dropped by sanity filters.",
-            labels(&[("source", GAMESCOPE_FRAME_SOURCE), ("reason", "zero")]),
+            self.frame_source_reason_labels("zero"),
             self.dropped_zero_total as f64,
         ));
         metrics.push(MetricSample::counter(
             names::GAME_FRAME_SOURCE_DROPPED_TOTAL,
             "Total frame timing samples dropped by sanity filters.",
-            labels(&[("source", GAMESCOPE_FRAME_SOURCE), ("reason", "too_large")]),
+            self.frame_source_reason_labels("too_large"),
             self.dropped_too_large_total as f64,
         ));
         metrics.push(MetricSample::counter(
             names::GAME_FRAME_SOURCE_DROPPED_TOTAL,
             "Total frame timing samples dropped by sanity filters.",
-            labels(&[
-                ("source", GAMESCOPE_FRAME_SOURCE),
-                ("reason", "invalid_sentinel"),
-            ]),
+            self.frame_source_reason_labels("invalid_sentinel"),
             self.dropped_invalid_sentinel_total as f64,
         ));
         metrics.push(MetricSample::counter(
             names::GAME_FRAME_SOURCE_DROPPED_TOTAL,
             "Total frame timing samples dropped by sanity filters.",
-            labels(&[
-                ("source", GAMESCOPE_FRAME_SOURCE),
-                ("reason", "unsupported_version"),
-            ]),
+            self.frame_source_reason_labels("unsupported_version"),
             self.dropped_unsupported_version_total as f64,
         ));
         metrics.push(MetricSample::counter(
             names::GAME_FRAME_SOURCE_DROPPED_TOTAL,
             "Total frame timing samples dropped by sanity filters.",
-            labels(&[("source", GAMESCOPE_FRAME_SOURCE), ("reason", "too_short")]),
+            self.frame_source_reason_labels("too_short"),
             self.dropped_too_short_total as f64,
         ));
         if let Some(timestamp) = self.last_sample_timestamp_seconds {
@@ -324,6 +318,9 @@ impl GameFpsRuntime {
     fn labels(&self, source: &str, window: Option<&str>) -> BTreeMap<String, String> {
         let mut labels = BTreeMap::new();
         labels.insert("source".to_string(), source.to_string());
+        if source == GAMESCOPE_FRAME_SOURCE {
+            labels.insert("queue".to_string(), self.queue_label().to_string());
+        }
         if let Some(window) = window {
             labels.insert("window".to_string(), window.to_string());
         }
@@ -338,6 +335,33 @@ impl GameFpsRuntime {
             }
         }
         labels
+    }
+
+    fn frame_source_labels(&self) -> BTreeMap<String, String> {
+        let mut labels = BTreeMap::new();
+        labels.insert("source".to_string(), GAMESCOPE_FRAME_SOURCE.to_string());
+        labels.insert("queue".to_string(), self.queue_label().to_string());
+        labels
+    }
+
+    fn frame_source_reason_labels(&self, reason: &str) -> BTreeMap<String, String> {
+        let mut labels = self.frame_source_labels();
+        labels.insert("reason".to_string(), reason.to_string());
+        labels
+    }
+
+    fn queue_label(&self) -> &'static str {
+        #[cfg(target_os = "linux")]
+        {
+            self.reader
+                .as_ref()
+                .map(MangoAppFrameReader::queue_label)
+                .unwrap_or("unavailable")
+        }
+        #[cfg(not(target_os = "linux"))]
+        {
+            "unavailable"
+        }
     }
 
     fn monotonic_nanos(&self) -> u64 {
@@ -358,7 +382,8 @@ impl GameFpsRuntime {
             }
 
             let now = Instant::now();
-            if self.reader.is_some() {
+            if let Some(reader) = &mut self.reader {
+                reader.refresh_sources(&self.config.gamescope_mangoapp);
                 self.source_supported = true;
                 self.refresh_source_up(now, self.last_state.is_game_running());
                 return;
@@ -406,7 +431,7 @@ impl GameFpsRuntime {
     fn read_frames(&mut self) -> Vec<FrameInput> {
         #[cfg(target_os = "linux")]
         {
-            let Some(reader) = &self.reader else {
+            let Some(reader) = &mut self.reader else {
                 self.source_up = false;
                 return Vec::new();
             };
