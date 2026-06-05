@@ -25,6 +25,7 @@ const MANGOHUD_LOG_SOURCE: &str = "mangohud_log";
 const FRAME_SOURCE_QUEUE_NOT_APPLICABLE: &str = "not_applicable";
 const FRAME_SOURCE_QUEUE_UNAVAILABLE: &str = "unavailable";
 const FRAME_SOURCE_QUEUE_BLOCKED: &str = "blocked_competing_consumer";
+const FRAME_SOURCE_QUEUE_DESTRUCTIVE_READ_DISABLED: &str = "destructive_read_disabled";
 const FRAME_SOURCE_UP_STALE_AFTER: Duration = Duration::from_secs(2);
 const MANGOHUD_LOG_DISCOVERY_INTERVAL: Duration = Duration::from_secs(1);
 
@@ -653,9 +654,9 @@ impl GameFpsRuntime {
     }
 
     fn refresh_frame_source_status(&mut self) {
-        for source in self.config.source_preference.clone() {
-            match FrameSourceKind::from_config_name(&source) {
-                Some(FrameSourceKind::MangoHudLog) if self.config.mangohud_log.enabled => {
+        if let Some(source) = configured_frame_sources(&self.config).into_iter().next() {
+            match source {
+                FrameSourceKind::MangoHudLog => {
                     self.set_frame_source(
                         FrameSourceKind::MangoHudLog,
                         FRAME_SOURCE_QUEUE_NOT_APPLICABLE,
@@ -664,20 +665,16 @@ impl GameFpsRuntime {
                         discover_mangohud_log_path(&self.config.mangohud_log).is_some();
                     self.source_up = false;
                     self.record_selected_source_health();
-                    return;
                 }
-                Some(FrameSourceKind::GamescopeMangoapp)
-                    if self.config.gamescope_mangoapp.enabled =>
-                {
+                FrameSourceKind::GamescopeMangoapp => {
                     self.set_frame_source(
                         FrameSourceKind::GamescopeMangoapp,
                         FRAME_SOURCE_QUEUE_UNAVAILABLE,
                     );
                     self.try_open_mangoapp_reader();
-                    return;
                 }
-                _ => {}
             }
+            return;
         }
         self.source_supported = false;
         self.source_up = false;
@@ -690,28 +687,22 @@ impl GameFpsRuntime {
     }
 
     fn read_frames(&mut self) -> Vec<FrameInput> {
-        for source in self.config.source_preference.clone() {
-            match FrameSourceKind::from_config_name(&source) {
-                Some(FrameSourceKind::MangoHudLog) if self.config.mangohud_log.enabled => {
+        if let Some(source) = configured_frame_sources(&self.config).into_iter().next() {
+            match source {
+                FrameSourceKind::MangoHudLog => {
                     self.set_frame_source(
                         FrameSourceKind::MangoHudLog,
                         FRAME_SOURCE_QUEUE_NOT_APPLICABLE,
                     );
-                    let frames = self.read_mangohud_log_frames();
-                    if self.source_supported {
-                        return frames;
-                    }
+                    return self.read_mangohud_log_frames();
                 }
-                Some(FrameSourceKind::GamescopeMangoapp)
-                    if self.config.gamescope_mangoapp.enabled =>
-                {
+                FrameSourceKind::GamescopeMangoapp => {
                     self.set_frame_source(
                         FrameSourceKind::GamescopeMangoapp,
                         FRAME_SOURCE_QUEUE_UNAVAILABLE,
                     );
                     return self.read_mangoapp_frames();
                 }
-                _ => {}
             }
         }
 
@@ -859,9 +850,29 @@ impl GameFpsRuntime {
             return;
         }
 
-        if !self.config.gamescope_mangoapp.allow_destructive_read
-            && mangoapp_competing_consumer_running()
-        {
+        if !self.config.gamescope_mangoapp.allow_destructive_read {
+            self.reader = None;
+            self.set_frame_source(
+                FrameSourceKind::GamescopeMangoapp,
+                FRAME_SOURCE_QUEUE_DESTRUCTIVE_READ_DISABLED,
+            );
+            self.source_supported = false;
+            self.source_up = false;
+            self.record_source_health(
+                FrameSourceKind::GamescopeMangoapp,
+                false,
+                false,
+                FRAME_SOURCE_QUEUE_DESTRUCTIVE_READ_DISABLED,
+            );
+            debug!(
+                source = GAMESCOPE_FRAME_SOURCE,
+                queue = FRAME_SOURCE_QUEUE_DESTRUCTIVE_READ_DISABLED,
+                "game frame source blocked because destructive queue reads are disabled"
+            );
+            return;
+        }
+
+        if mangoapp_competing_consumer_running() {
             self.reader = None;
             self.set_frame_source(
                 FrameSourceKind::GamescopeMangoapp,
@@ -965,6 +976,9 @@ fn initial_frame_source(config: &SteamDeckFpsConfig) -> FrameSourceKind {
 
 fn configured_frame_sources(config: &SteamDeckFpsConfig) -> Vec<FrameSourceKind> {
     let mut sources = Vec::new();
+    if config.mangohud_log.enabled {
+        sources.push(FrameSourceKind::MangoHudLog);
+    }
     for source in &config.source_preference {
         let Some(source) = FrameSourceKind::from_config_name(source) else {
             continue;
@@ -1527,6 +1541,107 @@ mod tests {
                 &[("source", GAMESCOPE_FRAME_SOURCE)]
             ),
             None
+        );
+    }
+
+    #[test]
+    fn passive_mangohud_log_stays_selected_with_stale_direct_queue_config() {
+        let gamescope_mangoapp = telemon_core::config::GamescopeMangoappConfig {
+            enabled: true,
+            allow_destructive_read: false,
+            ..Default::default()
+        };
+        let config = SteamDeckFpsConfig {
+            enabled: true,
+            source_preference: vec![
+                GAMESCOPE_FRAME_SOURCE.to_string(),
+                MANGOHUD_LOG_SOURCE.to_string(),
+            ],
+            mangohud_log: MangoHudLogConfig {
+                enabled: true,
+                paths: Vec::new(),
+                auto_discover: false,
+            },
+            gamescope_mangoapp,
+            ..Default::default()
+        };
+        let mut runtime = GameFpsRuntime::new(config, SteamDeckGameStateConfig::default());
+
+        assert!(runtime.read_frames().is_empty());
+        let metrics = runtime.metrics();
+
+        assert_eq!(
+            metric_value(
+                &metrics,
+                names::GAME_FRAME_SOURCE_SELECTED,
+                &[
+                    ("source", MANGOHUD_LOG_SOURCE),
+                    ("queue", FRAME_SOURCE_QUEUE_NOT_APPLICABLE)
+                ]
+            ),
+            Some(1.0)
+        );
+        assert_eq!(
+            metric_value(
+                &metrics,
+                names::GAME_FRAME_SOURCE_SELECTED,
+                &[("source", GAMESCOPE_FRAME_SOURCE)]
+            ),
+            Some(0.0)
+        );
+        assert_eq!(
+            metric_value(
+                &metrics,
+                names::GAME_FRAME_SOURCE_SUPPORTED,
+                &[
+                    ("source", MANGOHUD_LOG_SOURCE),
+                    ("queue", FRAME_SOURCE_QUEUE_NOT_APPLICABLE)
+                ]
+            ),
+            Some(0.0)
+        );
+    }
+
+    #[cfg(target_os = "linux")]
+    #[test]
+    fn direct_queue_reports_disabled_when_destructive_reads_are_not_allowed() {
+        let gamescope_mangoapp = telemon_core::config::GamescopeMangoappConfig {
+            enabled: true,
+            allow_destructive_read: false,
+            ..Default::default()
+        };
+        let config = SteamDeckFpsConfig {
+            enabled: true,
+            mangohud_log: Default::default(),
+            gamescope_mangoapp,
+            ..Default::default()
+        };
+        let mut runtime = GameFpsRuntime::new(config, SteamDeckGameStateConfig::default());
+
+        assert!(runtime.read_frames().is_empty());
+        let metrics = runtime.metrics();
+
+        assert_eq!(
+            metric_value(
+                &metrics,
+                names::GAME_FRAME_SOURCE_SELECTED,
+                &[
+                    ("source", GAMESCOPE_FRAME_SOURCE),
+                    ("queue", FRAME_SOURCE_QUEUE_DESTRUCTIVE_READ_DISABLED)
+                ]
+            ),
+            Some(1.0)
+        );
+        assert_eq!(
+            metric_value(
+                &metrics,
+                names::GAME_FRAME_SOURCE_SUPPORTED,
+                &[
+                    ("source", GAMESCOPE_FRAME_SOURCE),
+                    ("queue", FRAME_SOURCE_QUEUE_DESTRUCTIVE_READ_DISABLED)
+                ]
+            ),
+            Some(0.0)
         );
     }
 
