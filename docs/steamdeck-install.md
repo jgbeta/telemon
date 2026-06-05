@@ -94,24 +94,25 @@ The bundled installer can find the bundled `telemon-exporter` binary automatical
 The generated Steam Deck profile enables Linux `hwmon`, `/proc` system metrics, `linux_power_supply`, `linux_amdgpu`, and optional `steam_deck_game_state` sampling detection. The AMDGPU collector reads Steam Deck/APU `gpu_metrics` when available for CPU temperature, APU power, GPU clocks, and throttle flags. Gamescope detection is non-fatal; Telemon reads Gamescope X11 atoms first, can discover Steam's `DISPLAY`/`XAUTHORITY`, and falls back to Desktop active-window or Steam process-tree detection before returning to temperature-based adaptive sampling.
 
 When `--enable-fps` is used, the profile also enables the gated `/fps` endpoint
-and the experimental Gamescope/MangoApp frame source. Telemon creates or opens
-the same System V message queue that MangoHUD/mangoapp uses, then reads
-Gamescope frame-time messages directly. MangoHUD is not required, but Gamescope
-must still emit MangoApp frame messages for FPS metrics to appear.
+and prefers MangoHud-compatible log tailing before the direct Gamescope/MangoApp
+queue. The default source order is `mangohud_log`, then `gamescope_mangoapp`.
+For normal use with MangoHud enabled, configure MangoHud logging and let Telemon
+tail the newest CSV log from the configured paths or common user log locations.
+This avoids consuming frame messages from the same queue MangoHud uses.
 
 Telemon exports rolling aggregate FPS, frame-time, 1% low, 0.1% low, 1% high,
 and pacing jitter metrics. It does not export raw per-frame samples. Game names
 are resolved locally from Steam `appmanifest_<appid>.acf` files when available.
 
-The Steam Deck profile also enables a compatibility fallback for SteamOS builds
-where Gamescope/MangoApp traffic appears on the failed-`ftok("mangoapp", 65)`
-queue key shown by `ipcs -q` as `0xffffffff`. Telemon only attaches to that
-legacy queue if it already exists; it does not create it.
-
-The Gamescope/MangoApp queue is an exclusive-consuming source: queue reads remove
-messages. Running MangoHUD/mangoapp and Telemon FPS telemetry at the same time
-can make them compete for frame samples. Keep FPS disabled unless you are
-actively testing Telemon FPS telemetry.
+The direct `gamescope_mangoapp` source remains useful for diagnostics and setups
+without MangoHud logging. It reads the System V message queue used by
+Gamescope/MangoApp, including the SteamOS compatibility fallback where traffic
+appears on the failed-`ftok("mangoapp", 65)` queue key shown by `ipcs -q` as
+`0xffffffff`. Queue reads are destructive, so the Steam Deck profile sets
+`allow_destructive_read: false` by default. If a `mangoapp` or `MangoHud` process
+is detected, the direct source reports `queue="blocked_competing_consumer"`
+instead of stealing samples. Only set `allow_destructive_read: true` when you are
+intentionally running Telemon as the exclusive queue consumer.
 
 ## Verify
 
@@ -170,4 +171,4 @@ rm -rf ~/.config/telemon ~/.local/state/telemon/exporter
 
 ## Current Limits
 
-FPS telemetry is experimental and currently depends on Gamescope emitting MangoApp frame messages. If `/fps` reports `game_frame_source_supported 1` but `game_frame_source_up 0`, Telemon opened a candidate queue but has not recently received valid frames. The `queue` label shows whether Telemon is using `configured_ftok` or `legacy_failed_ftok`. If `supported` is `0`, validate that the configured `ftok_path` exists and check whether `ipcs -q` shows a `0xffffffff` queue. Normal hardware telemetry and game-state sampling can still be working correctly. Fan control and TDP control are not implemented.
+FPS telemetry is experimental. The preferred `mangohud_log` source requires MangoHud to write CSV logs; if `game_frame_source_supported` is `1` and `game_frame_source_up` is `0`, Telemon found a candidate log or queue but has not recently received valid frame samples. For `source="mangohud_log"`, check MangoHud logging and `mangohud_log.paths`. For `source="gamescope_mangoapp"`, check `ipcs -q`, the `queue` label, and whether direct reads are blocked by a competing MangoHud/mangoapp consumer. Normal hardware telemetry and game-state sampling can still be working correctly. Fan control and TDP control are not implemented.

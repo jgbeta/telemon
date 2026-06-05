@@ -232,8 +232,18 @@ pub struct SteamDeckFpsConfig {
     pub max_frame_time_milliseconds: u64,
     pub poll_interval_milliseconds: u64,
     pub max_messages_per_poll: u64,
+    pub source_preference: Vec<String>,
+    pub mangohud_log: MangoHudLogConfig,
     pub gamescope_mangoapp: GamescopeMangoappConfig,
     pub steam_library_roots: Vec<PathBuf>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(default)]
+pub struct MangoHudLogConfig {
+    pub enabled: bool,
+    pub paths: Vec<PathBuf>,
+    pub auto_discover: bool,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -243,6 +253,7 @@ pub struct GamescopeMangoappConfig {
     pub ftok_path: PathBuf,
     pub project_id: i32,
     pub legacy_failed_ftok_fallback_enabled: bool,
+    pub allow_destructive_read: bool,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -479,6 +490,9 @@ impl AppConfig {
             if self.collectors.steam_deck_fps.windows_seconds.is_empty() {
                 bail!("collectors.steam_deck_fps.windows_seconds must not be empty when enabled");
             }
+            if self.collectors.steam_deck_fps.source_preference.is_empty() {
+                bail!("collectors.steam_deck_fps.source_preference must not be empty when enabled");
+            }
             for (index, value) in self
                 .collectors
                 .steam_deck_fps
@@ -490,6 +504,36 @@ impl AppConfig {
                     *value,
                     &format!("collectors.steam_deck_fps.windows_seconds[{index}]"),
                 )?;
+            }
+        }
+        for (index, source) in self
+            .collectors
+            .steam_deck_fps
+            .source_preference
+            .iter()
+            .enumerate()
+        {
+            match source.as_str() {
+                "mangohud_log" | "gamescope_mangoapp" => {}
+                _ => bail!(
+                    "collectors.steam_deck_fps.source_preference[{index}] has unsupported source {source:?}"
+                ),
+            }
+        }
+        if self.collectors.steam_deck_fps.mangohud_log.enabled {
+            for (index, path) in self
+                .collectors
+                .steam_deck_fps
+                .mangohud_log
+                .paths
+                .iter()
+                .enumerate()
+            {
+                if path.as_os_str().is_empty() {
+                    bail!(
+                        "collectors.steam_deck_fps.mangohud_log.paths[{index}] must not be empty when enabled"
+                    );
+                }
             }
         }
         if self.collectors.steam_deck_fps.gamescope_mangoapp.enabled
@@ -849,8 +893,20 @@ impl Default for SteamDeckFpsConfig {
             max_frame_time_milliseconds: 1_000,
             poll_interval_milliseconds: 100,
             max_messages_per_poll: 512,
+            source_preference: vec!["mangohud_log".to_string(), "gamescope_mangoapp".to_string()],
+            mangohud_log: MangoHudLogConfig::default(),
             gamescope_mangoapp: GamescopeMangoappConfig::default(),
             steam_library_roots: Vec::new(),
+        }
+    }
+}
+
+impl Default for MangoHudLogConfig {
+    fn default() -> Self {
+        Self {
+            enabled: false,
+            paths: Vec::new(),
+            auto_discover: true,
         }
     }
 }
@@ -862,6 +918,7 @@ impl Default for GamescopeMangoappConfig {
             ftok_path: PathBuf::from("mangoapp"),
             project_id: 65,
             legacy_failed_ftok_fallback_enabled: false,
+            allow_destructive_read: false,
         }
     }
 }
@@ -1114,6 +1171,18 @@ mod tests {
             100
         );
         assert_eq!(config.collectors.steam_deck_fps.max_messages_per_poll, 512);
+        assert_eq!(
+            config.collectors.steam_deck_fps.source_preference,
+            vec!["mangohud_log", "gamescope_mangoapp"]
+        );
+        assert!(!config.collectors.steam_deck_fps.mangohud_log.enabled);
+        assert!(config.collectors.steam_deck_fps.mangohud_log.auto_discover);
+        assert!(config
+            .collectors
+            .steam_deck_fps
+            .mangohud_log
+            .paths
+            .is_empty());
         assert!(!config.collectors.steam_deck_fps.gamescope_mangoapp.enabled);
         assert_eq!(
             config
@@ -1137,6 +1206,13 @@ mod tests {
                 .steam_deck_fps
                 .gamescope_mangoapp
                 .legacy_failed_ftok_fallback_enabled
+        );
+        assert!(
+            !config
+                .collectors
+                .steam_deck_fps
+                .gamescope_mangoapp
+                .allow_destructive_read
         );
     }
 
@@ -1283,6 +1359,20 @@ mod tests {
 
         let mut config = AppConfig::default();
         config.collectors.steam_deck_fps.poll_interval_milliseconds = 0;
+        assert!(config.validate().is_err());
+
+        let mut config = AppConfig::default();
+        config.collectors.steam_deck_fps.enabled = true;
+        config.collectors.steam_deck_fps.source_preference.clear();
+        assert!(config.validate().is_err());
+
+        let mut config = AppConfig::default();
+        config.collectors.steam_deck_fps.source_preference = vec!["unknown".to_string()];
+        assert!(config.validate().is_err());
+
+        let mut config = AppConfig::default();
+        config.collectors.steam_deck_fps.mangohud_log.enabled = true;
+        config.collectors.steam_deck_fps.mangohud_log.paths = vec![PathBuf::new()];
         assert!(config.validate().is_err());
 
         let mut config = AppConfig::default();

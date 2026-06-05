@@ -78,10 +78,10 @@ metric,hardware_state,gauge,/metrics,linux_amdgpu;linux_drm;nvidia_nvml,componen
 metric,game_active,gauge,/fps,steam_deck_fps,source;appid?;game_name?,Whether a game session is active.
 metric,game_focused,gauge,/fps,steam_deck_fps,source;appid?;game_name?,Whether the active game is focused and visible.
 metric,game_identity_info,gauge,/fps,steam_deck_fps,appid;game_name?;source,Game identity resolved from local Steam app manifests.
-metric,game_frame_source_supported,gauge,/fps,steam_deck_fps,source;queue,Whether Telemon opened a candidate frame timing queue.
+metric,game_frame_source_supported,gauge,/fps,steam_deck_fps,source;queue,Whether Telemon found a candidate frame timing source.
 metric,game_frame_source_up,gauge,/fps,steam_deck_fps,source;queue,Whether valid frame samples were received recently while a game is active.
-metric,game_frame_source_samples_total,counter,/fps,steam_deck_fps,source;queue,Total accepted frame timing samples.
-metric,game_frame_source_dropped_total,counter,/fps,steam_deck_fps,source;queue;reason,Frame timing samples dropped by sanity filters: zero too_large invalid_sentinel unsupported_version too_short.
+metric,game_frame_source_samples_total,counter,/fps,steam_deck_fps,source;queue,Total accepted frame timing samples from the active source.
+metric,game_frame_source_dropped_total,counter,/fps,steam_deck_fps,source;queue;reason,Frame timing samples dropped by source sanity filters: zero too_large invalid_sentinel unsupported_version too_short.
 metric,game_frame_source_last_sample_timestamp_seconds,gauge,/fps,steam_deck_fps,source;queue,Unix timestamp of the last accepted frame timing sample.
 metric,game_frame_count,gauge,/fps,steam_deck_fps,source;queue;window;appid?;game_name?,Frame count in the rolling window.
 metric,game_frame_rate_fps,gauge,/fps,steam_deck_fps,source;queue;window;stat;method;appid?;game_name?,Average FPS and low/high percentile FPS aggregates.

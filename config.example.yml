@@ -115,11 +115,17 @@ collectors:
     max_frame_time_milliseconds: 1000
     poll_interval_milliseconds: 100
     max_messages_per_poll: 512
+    source_preference: ["mangohud_log", "gamescope_mangoapp"]
+    mangohud_log:
+      enabled: false
+      paths: []
+      auto_discover: true
     gamescope_mangoapp:
       enabled: false
       ftok_path: "mangoapp"
       project_id: 65
       legacy_failed_ftok_fallback_enabled: false
+      allow_destructive_read: false
     steam_library_roots: []
 
   nvidia_nvml:
