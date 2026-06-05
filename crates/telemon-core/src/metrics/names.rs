@@ -94,6 +94,7 @@ pub const GAME_ACTIVE: &str = "game_active";
 pub const GAME_FOCUSED: &str = "game_focused";
 pub const GAME_IDENTITY_INFO: &str = "game_identity_info";
 pub const GAME_FRAME_SOURCE_SUPPORTED: &str = "game_frame_source_supported";
+pub const GAME_FRAME_SOURCE_SELECTED: &str = "game_frame_source_selected";
 pub const GAME_FRAME_SOURCE_UP: &str = "game_frame_source_up";
 pub const GAME_FRAME_SOURCE_SAMPLES_TOTAL: &str = "game_frame_source_samples_total";
 pub const GAME_FRAME_SOURCE_DROPPED_TOTAL: &str = "game_frame_source_dropped_total";

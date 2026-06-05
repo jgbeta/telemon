@@ -539,10 +539,10 @@ collectors:
       paths: []
       auto_discover: true
     gamescope_mangoapp:
-      enabled: $ENABLE_FPS
+      enabled: false
       ftok_path: "$HOME/mangoapp"
       project_id: 65
-      legacy_failed_ftok_fallback_enabled: $ENABLE_FPS
+      legacy_failed_ftok_fallback_enabled: false
       allow_destructive_read: false
     steam_library_roots: []
 

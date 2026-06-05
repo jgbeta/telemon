@@ -75,6 +75,7 @@ default `honor_labels: false`, conflicting scraped labels can be renamed to
 | `game_focused` | gauge | `/fps` | `steam_deck_fps` | `source`, optional `appid`, `game_name` | `1` when the active game is focused and visible. |
 | `game_identity_info` | gauge | `/fps` | `steam_deck_fps` | `appid`, optional `game_name`, `source` | Game identity resolved from local Steam app manifests. |
 | `game_frame_source_supported` | gauge | `/fps` | `steam_deck_fps` | `source`, `queue` | `1` when Telemon found a candidate frame timing source. |
+| `game_frame_source_selected` | gauge | `/fps` | `steam_deck_fps` | `source`, `queue` | `1` for the frame timing source currently selected by Telemon. |
 | `game_frame_source_up` | gauge | `/fps` | `steam_deck_fps` | `source`, `queue` | `1` when valid frame samples were received recently while a game is active. |
 | `game_frame_source_samples_total` | counter | `/fps` | `steam_deck_fps` | `source`, `queue` | Total accepted frame timing samples from the active source. |
 | `game_frame_source_dropped_total` | counter | `/fps` | `steam_deck_fps` | `source`, `queue`, `reason` | Frame timing samples dropped by source sanity filters. Reasons: `zero`, `too_large`, `invalid_sentinel`, `unsupported_version`, `too_short`. |

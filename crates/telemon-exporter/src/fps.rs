@@ -44,6 +44,12 @@ pub fn disabled_metrics() -> Vec<MetricSample> {
             0.0,
         ),
         MetricSample::gauge(
+            names::GAME_FRAME_SOURCE_SELECTED,
+            "Whether this game frame timing source is currently selected.",
+            source_labels.clone(),
+            0.0,
+        ),
+        MetricSample::gauge(
             names::GAME_FRAME_SOURCE_SUPPORTED,
             "Whether a game frame timing source is available.",
             source_labels.clone(),
@@ -100,7 +106,7 @@ struct FrameInput {
     visible_frametime_ns: u64,
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
 enum FrameSourceKind {
     MangoHudLog,
     GamescopeMangoapp,
@@ -126,6 +132,23 @@ impl FrameSourceKind {
         match self {
             Self::MangoHudLog => FRAME_SOURCE_QUEUE_NOT_APPLICABLE,
             Self::GamescopeMangoapp => FRAME_SOURCE_QUEUE_UNAVAILABLE,
+        }
+    }
+}
+
+#[derive(Debug, Clone, Copy)]
+struct FrameSourceHealth {
+    supported: bool,
+    up: bool,
+    queue_label: &'static str,
+}
+
+impl FrameSourceHealth {
+    fn unavailable(source: FrameSourceKind) -> Self {
+        Self {
+            supported: false,
+            up: false,
+            queue_label: source.unavailable_queue_label(),
         }
     }
 }
@@ -281,6 +304,7 @@ struct GameFpsRuntime {
     last_sample_instant: Option<Instant>,
     frame_source: FrameSourceKind,
     frame_queue_label: &'static str,
+    source_health: BTreeMap<FrameSourceKind, FrameSourceHealth>,
     mangohud_log_tail: MangoHudLogTail,
     start: Instant,
     last_open_attempt: Option<Instant>,
@@ -305,6 +329,13 @@ impl GameFpsRuntime {
             .then(|| GamescopeDetector::new(game_state_config));
 
         let frame_source = initial_frame_source(&config);
+        let mut source_health = BTreeMap::new();
+        for source in configured_frame_sources(&config) {
+            source_health.insert(source, FrameSourceHealth::unavailable(source));
+        }
+        source_health
+            .entry(frame_source)
+            .or_insert_with(|| FrameSourceHealth::unavailable(frame_source));
 
         Self {
             title_resolver: SteamGameTitleResolver::new(&config.steam_library_roots),
@@ -326,6 +357,7 @@ impl GameFpsRuntime {
             last_sample_instant: None,
             frame_source,
             frame_queue_label: frame_source.unavailable_queue_label(),
+            source_health,
             mangohud_log_tail: MangoHudLogTail::default(),
             start: Instant::now(),
             last_open_attempt: None,
@@ -349,6 +381,7 @@ impl GameFpsRuntime {
             self.clear_windows();
             self.refresh_frame_source_status();
             self.source_up = false;
+            self.record_selected_source_health();
             return;
         }
 
@@ -423,19 +456,38 @@ impl GameFpsRuntime {
             ));
         }
 
+        for source in configured_frame_sources(&self.config) {
+            let health = self
+                .source_health
+                .get(&source)
+                .copied()
+                .unwrap_or_else(|| FrameSourceHealth::unavailable(source));
+            let source_labels = self.frame_source_labels_for(source, health.queue_label);
+            metrics.push(MetricSample::gauge(
+                names::GAME_FRAME_SOURCE_SELECTED,
+                "Whether this game frame timing source is currently selected.",
+                source_labels.clone(),
+                if source == self.frame_source {
+                    1.0
+                } else {
+                    0.0
+                },
+            ));
+            metrics.push(MetricSample::gauge(
+                names::GAME_FRAME_SOURCE_SUPPORTED,
+                "Whether a game frame timing source is available.",
+                source_labels.clone(),
+                if health.supported { 1.0 } else { 0.0 },
+            ));
+            metrics.push(MetricSample::gauge(
+                names::GAME_FRAME_SOURCE_UP,
+                "Whether the game frame timing source is currently healthy.",
+                source_labels,
+                if health.up { 1.0 } else { 0.0 },
+            ));
+        }
+
         let source_labels = self.frame_source_labels();
-        metrics.push(MetricSample::gauge(
-            names::GAME_FRAME_SOURCE_SUPPORTED,
-            "Whether a game frame timing source is available.",
-            source_labels.clone(),
-            if self.source_supported { 1.0 } else { 0.0 },
-        ));
-        metrics.push(MetricSample::gauge(
-            names::GAME_FRAME_SOURCE_UP,
-            "Whether the game frame timing source is currently healthy.",
-            source_labels.clone(),
-            if self.source_up { 1.0 } else { 0.0 },
-        ));
         metrics.push(MetricSample::counter(
             names::GAME_FRAME_SOURCE_SAMPLES_TOTAL,
             "Total accepted frame timing samples read from the game frame source.",
@@ -531,12 +583,17 @@ impl GameFpsRuntime {
     }
 
     fn frame_source_labels(&self) -> BTreeMap<String, String> {
+        self.frame_source_labels_for(self.frame_source, self.frame_queue_label)
+    }
+
+    fn frame_source_labels_for(
+        &self,
+        source: FrameSourceKind,
+        queue_label: &'static str,
+    ) -> BTreeMap<String, String> {
         let mut labels = BTreeMap::new();
-        labels.insert(
-            "source".to_string(),
-            self.frame_source.metric_source().to_string(),
-        );
-        labels.insert("queue".to_string(), self.frame_queue_label.to_string());
+        labels.insert("source".to_string(), source.metric_source().to_string());
+        labels.insert("queue".to_string(), queue_label.to_string());
         labels
     }
 
@@ -555,6 +612,36 @@ impl GameFpsRuntime {
             self.last_sample_instant = None;
             self.last_sample_timestamp_seconds = None;
         }
+        self.source_health
+            .entry(source)
+            .or_insert_with(|| FrameSourceHealth::unavailable(source))
+            .queue_label = queue_label;
+    }
+
+    fn record_source_health(
+        &mut self,
+        source: FrameSourceKind,
+        supported: bool,
+        up: bool,
+        queue_label: &'static str,
+    ) {
+        self.source_health.insert(
+            source,
+            FrameSourceHealth {
+                supported,
+                up,
+                queue_label,
+            },
+        );
+    }
+
+    fn record_selected_source_health(&mut self) {
+        self.record_source_health(
+            self.frame_source,
+            self.source_supported,
+            self.source_up,
+            self.frame_queue_label,
+        );
     }
 
     fn monotonic_nanos(&self) -> u64 {
@@ -575,6 +662,8 @@ impl GameFpsRuntime {
                     );
                     self.source_supported =
                         discover_mangohud_log_path(&self.config.mangohud_log).is_some();
+                    self.source_up = false;
+                    self.record_selected_source_health();
                     return;
                 }
                 Some(FrameSourceKind::GamescopeMangoapp)
@@ -592,6 +681,12 @@ impl GameFpsRuntime {
         }
         self.source_supported = false;
         self.source_up = false;
+        self.record_source_health(
+            FrameSourceKind::GamescopeMangoapp,
+            false,
+            false,
+            FRAME_SOURCE_QUEUE_UNAVAILABLE,
+        );
     }
 
     fn read_frames(&mut self) -> Vec<FrameInput> {
@@ -656,12 +751,24 @@ impl GameFpsRuntime {
                     self.last_sample_instant = Some(Instant::now());
                 }
                 self.refresh_source_up(Instant::now(), self.last_state.is_game_running());
+                self.record_source_health(
+                    FrameSourceKind::MangoHudLog,
+                    self.source_supported,
+                    self.source_up,
+                    FRAME_SOURCE_QUEUE_NOT_APPLICABLE,
+                );
                 result.frames
             }
             Err(error) => {
                 warn!(%error, source = MANGOHUD_LOG_SOURCE, "game frame log read failed");
                 self.source_supported = false;
                 self.source_up = false;
+                self.record_source_health(
+                    FrameSourceKind::MangoHudLog,
+                    false,
+                    false,
+                    FRAME_SOURCE_QUEUE_NOT_APPLICABLE,
+                );
                 Vec::new()
             }
         }
@@ -706,6 +813,7 @@ impl GameFpsRuntime {
                         self.last_sample_instant = Some(Instant::now());
                     }
                     self.refresh_source_up(Instant::now(), self.last_state.is_game_running());
+                    self.record_selected_source_health();
                     samples
                         .into_iter()
                         .map(|sample| FrameInput {
@@ -723,6 +831,7 @@ impl GameFpsRuntime {
                     );
                     self.source_supported = false;
                     self.source_up = false;
+                    self.record_selected_source_health();
                     Vec::new()
                 }
             }
@@ -741,6 +850,12 @@ impl GameFpsRuntime {
             self.reader = None;
             self.source_supported = false;
             self.source_up = false;
+            self.record_source_health(
+                FrameSourceKind::GamescopeMangoapp,
+                false,
+                false,
+                FRAME_SOURCE_QUEUE_UNAVAILABLE,
+            );
             return;
         }
 
@@ -754,6 +869,12 @@ impl GameFpsRuntime {
             );
             self.source_supported = false;
             self.source_up = false;
+            self.record_source_health(
+                FrameSourceKind::GamescopeMangoapp,
+                false,
+                false,
+                FRAME_SOURCE_QUEUE_BLOCKED,
+            );
             debug!(
                 source = GAMESCOPE_FRAME_SOURCE,
                 queue = FRAME_SOURCE_QUEUE_BLOCKED,
@@ -773,6 +894,7 @@ impl GameFpsRuntime {
             self.set_frame_source(FrameSourceKind::GamescopeMangoapp, queue_label);
             self.source_supported = true;
             self.refresh_source_up(now, self.last_state.is_game_running());
+            self.record_selected_source_health();
             return;
         }
 
@@ -794,6 +916,7 @@ impl GameFpsRuntime {
                 self.set_frame_source(FrameSourceKind::GamescopeMangoapp, queue_label);
                 self.source_supported = true;
                 self.refresh_source_up(now, self.last_state.is_game_running());
+                self.record_selected_source_health();
                 debug!(
                     source = GAMESCOPE_FRAME_SOURCE,
                     queue = queue_label,
@@ -807,6 +930,7 @@ impl GameFpsRuntime {
                 );
                 self.source_supported = false;
                 self.source_up = false;
+                self.record_selected_source_health();
                 debug!(%error, source = GAMESCOPE_FRAME_SOURCE, "game frame source unavailable");
             }
         }
@@ -816,6 +940,12 @@ impl GameFpsRuntime {
     fn try_open_mangoapp_reader(&mut self) {
         self.source_supported = false;
         self.source_up = false;
+        self.record_source_health(
+            FrameSourceKind::GamescopeMangoapp,
+            false,
+            false,
+            FRAME_SOURCE_QUEUE_UNAVAILABLE,
+        );
     }
 
     fn refresh_source_up(&mut self, now: Instant, active: bool) {
@@ -827,11 +957,27 @@ impl GameFpsRuntime {
 }
 
 fn initial_frame_source(config: &SteamDeckFpsConfig) -> FrameSourceKind {
-    config
-        .source_preference
-        .iter()
-        .find_map(|source| FrameSourceKind::from_config_name(source))
+    configured_frame_sources(config)
+        .into_iter()
+        .next()
         .unwrap_or(FrameSourceKind::GamescopeMangoapp)
+}
+
+fn configured_frame_sources(config: &SteamDeckFpsConfig) -> Vec<FrameSourceKind> {
+    let mut sources = Vec::new();
+    for source in &config.source_preference {
+        let Some(source) = FrameSourceKind::from_config_name(source) else {
+            continue;
+        };
+        let enabled = match source {
+            FrameSourceKind::MangoHudLog => config.mangohud_log.enabled,
+            FrameSourceKind::GamescopeMangoapp => config.gamescope_mangoapp.enabled,
+        };
+        if enabled && !sources.contains(&source) {
+            sources.push(source);
+        }
+    }
+    sources
 }
 
 fn discover_mangohud_log_path(config: &MangoHudLogConfig) -> Option<PathBuf> {
@@ -1188,6 +1334,21 @@ mod tests {
     use super::*;
     use telemon_collectors::game::capture::CaptureStats;
 
+    fn metric_value(metrics: &[MetricSample], name: &str, labels: &[(&str, &str)]) -> Option<f64> {
+        metrics
+            .iter()
+            .find(|metric| {
+                metric.name == name
+                    && labels.iter().all(|(key, value)| {
+                        metric
+                            .labels
+                            .get(*key)
+                            .is_some_and(|actual| actual == value)
+                    })
+            })
+            .map(|metric| metric.value)
+    }
+
     #[test]
     fn summary_metrics_include_appid_and_game_name_labels() {
         let summary = CaptureStats::from_frame_times_ns([16_000_000, 17_000_000, 33_000_000])
@@ -1321,6 +1482,71 @@ mod tests {
         assert!(is_mangoapp_consumer_name("mangohud.x86_64"));
         assert!(!is_mangoapp_consumer_name("telemon-exporter"));
         assert!(!is_mangoapp_consumer_name("steam"));
+    }
+
+    #[test]
+    fn passive_mangohud_log_config_selects_log_source_without_direct_queue() {
+        let config = SteamDeckFpsConfig {
+            enabled: true,
+            mangohud_log: MangoHudLogConfig {
+                enabled: true,
+                paths: Vec::new(),
+                auto_discover: false,
+            },
+            ..Default::default()
+        };
+        let runtime = GameFpsRuntime::new(config, SteamDeckGameStateConfig::default());
+        let metrics = runtime.metrics();
+
+        assert_eq!(
+            metric_value(
+                &metrics,
+                names::GAME_FRAME_SOURCE_SELECTED,
+                &[
+                    ("source", MANGOHUD_LOG_SOURCE),
+                    ("queue", FRAME_SOURCE_QUEUE_NOT_APPLICABLE)
+                ]
+            ),
+            Some(1.0)
+        );
+        assert_eq!(
+            metric_value(
+                &metrics,
+                names::GAME_FRAME_SOURCE_SUPPORTED,
+                &[
+                    ("source", MANGOHUD_LOG_SOURCE),
+                    ("queue", FRAME_SOURCE_QUEUE_NOT_APPLICABLE)
+                ]
+            ),
+            Some(0.0)
+        );
+        assert_eq!(
+            metric_value(
+                &metrics,
+                names::GAME_FRAME_SOURCE_SELECTED,
+                &[("source", GAMESCOPE_FRAME_SOURCE)]
+            ),
+            None
+        );
+    }
+
+    #[test]
+    fn configured_frame_sources_ignore_disabled_direct_queue() {
+        let config = SteamDeckFpsConfig {
+            enabled: true,
+            mangohud_log: MangoHudLogConfig {
+                enabled: true,
+                paths: Vec::new(),
+                auto_discover: false,
+            },
+            gamescope_mangoapp: Default::default(),
+            ..Default::default()
+        };
+
+        assert_eq!(
+            configured_frame_sources(&config),
+            vec![FrameSourceKind::MangoHudLog]
+        );
     }
 
     #[test]
