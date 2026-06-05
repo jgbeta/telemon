@@ -1,6 +1,6 @@
 use std::ffi::CString;
 use std::io;
-use std::mem::{offset_of, size_of, MaybeUninit};
+use std::mem::{offset_of, size_of};
 use std::os::unix::ffi::OsStrExt;
 use std::path::Path;
 
@@ -10,6 +10,8 @@ use telemon_core::config::GamescopeMangoappConfig;
 const MANGOAPP_FRAME_MESSAGE_TYPE: c_long = 1;
 const MANGOAPP_MESSAGE_VERSION: u32 = 1;
 const INVALID_FRAME_TIME_NS: u64 = u64::MAX;
+const MANGOAPP_PAYLOAD_CAPACITY: usize = 4096;
+const MANGOAPP_MESSAGE_BUFFER_SIZE: usize = size_of::<c_long>() + MANGOAPP_PAYLOAD_CAPACITY;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct MangoAppFrameSample {
@@ -226,15 +228,14 @@ impl MangoAppFrameReader {
     }
 
     fn read_one(&self, queue_id: libc::c_int) -> io::Result<Option<MangoAppReadOne>> {
-        let mut message = MaybeUninit::<MangoAppMsgV1>::zeroed();
-        let message_size = size_of::<MangoAppMsgV1>() - size_of::<c_long>();
+        let mut message = [0_u8; MANGOAPP_MESSAGE_BUFFER_SIZE];
         let result = unsafe {
             libc::msgrcv(
                 queue_id,
                 message.as_mut_ptr().cast(),
-                message_size,
+                MANGOAPP_PAYLOAD_CAPACITY,
                 MANGOAPP_FRAME_MESSAGE_TYPE,
-                libc::IPC_NOWAIT,
+                mangoapp_msgrcv_flags(),
             )
         };
         if result < 0 {
@@ -245,7 +246,6 @@ impl MangoAppFrameReader {
             return Err(error);
         }
 
-        let message = unsafe { message.assume_init() };
         Ok(Some(decode_message(
             &message,
             result as usize,
@@ -304,32 +304,31 @@ fn legacy_msgget_flags() -> c_int {
     0
 }
 
+fn mangoapp_msgrcv_flags() -> c_int {
+    libc::IPC_NOWAIT
+}
+
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 enum MangoAppReadOne {
     Sample(MangoAppFrameSample),
     Dropped(MangoAppDropReason),
 }
 
-fn decode_message(
-    message: &MangoAppMsgV1,
-    payload_len: usize,
-    max_frame_time_ns: u64,
-) -> MangoAppReadOne {
-    if payload_len < size_of::<u32>() {
+fn decode_message(message: &[u8], payload_len: usize, max_frame_time_ns: u64) -> MangoAppReadOne {
+    let Some(version) = read_field::<u32>(message, payload_len, mangoapp_version_offset()) else {
         return MangoAppReadOne::Dropped(MangoAppDropReason::TooShort);
-    }
-
-    let version = unsafe { std::ptr::addr_of!(message.header.version).read_unaligned() };
+    };
     if version != MANGOAPP_MESSAGE_VERSION {
         return MangoAppReadOne::Dropped(MangoAppDropReason::UnsupportedVersion);
     }
 
-    if payload_len < payload_bytes_through::<u64>(offset_of!(MangoAppMsgV1, visible_frametime_ns)) {
+    let Some(visible_frametime_ns) = read_field::<u64>(
+        message,
+        payload_len,
+        offset_of!(MangoAppMsgV1, visible_frametime_ns),
+    ) else {
         return MangoAppReadOne::Dropped(MangoAppDropReason::TooShort);
-    }
-
-    let visible_frametime_ns =
-        unsafe { std::ptr::addr_of!(message.visible_frametime_ns).read_unaligned() };
+    };
     if visible_frametime_ns == INVALID_FRAME_TIME_NS {
         return MangoAppReadOne::Dropped(MangoAppDropReason::InvalidSentinel);
     }
@@ -341,38 +340,34 @@ fn decode_message(
     }
 
     MangoAppReadOne::Sample(MangoAppFrameSample {
-        pid: read_optional_field(message, payload_len, offset_of!(MangoAppMsgV1, pid))
-            .unwrap_or_default(),
-        app_frametime_ns: read_optional_field(
+        pid: read_field(message, payload_len, offset_of!(MangoAppMsgV1, pid)).unwrap_or_default(),
+        app_frametime_ns: read_field(
             message,
             payload_len,
             offset_of!(MangoAppMsgV1, app_frametime_ns),
         )
         .unwrap_or_default(),
         visible_frametime_ns,
-        latency_ns: read_optional_field(
-            message,
-            payload_len,
-            offset_of!(MangoAppMsgV1, latency_ns),
-        )
-        .unwrap_or_default(),
+        latency_ns: read_field(message, payload_len, offset_of!(MangoAppMsgV1, latency_ns))
+            .unwrap_or_default(),
     })
 }
 
-fn read_optional_field<T: Copy>(
-    message: &MangoAppMsgV1,
-    payload_len: usize,
-    field_offset: usize,
-) -> Option<T> {
+fn read_field<T: Copy>(message: &[u8], payload_len: usize, field_offset: usize) -> Option<T> {
     if payload_len < payload_bytes_through::<T>(field_offset) {
         return None;
     }
-    let base = std::ptr::from_ref(message).cast::<u8>();
-    Some(unsafe { base.add(field_offset).cast::<T>().read_unaligned() })
+    let field_end = field_offset.checked_add(size_of::<T>())?;
+    let field = message.get(field_offset..field_end)?;
+    Some(unsafe { field.as_ptr().cast::<T>().read_unaligned() })
 }
 
 fn payload_bytes_through<T>(field_offset: usize) -> usize {
     field_offset + size_of::<T>() - size_of::<c_long>()
+}
+
+fn mangoapp_version_offset() -> usize {
+    offset_of!(MangoAppMsgV1, header) + offset_of!(MangoAppMsgHeader, version)
 }
 
 #[repr(C, packed)]
@@ -417,6 +412,11 @@ mod tests {
         }
     }
 
+    fn message_bytes(message: &MangoAppMsgV1) -> Vec<u8> {
+        let ptr = std::ptr::from_ref(message).cast::<u8>();
+        unsafe { std::slice::from_raw_parts(ptr, size_of::<MangoAppMsgV1>()).to_vec() }
+    }
+
     #[test]
     fn message_size_and_offsets_match_mangohud_protocol() {
         assert_eq!(size_of::<MangoAppMsgHeader>(), size_of::<c_long>() + 4);
@@ -449,6 +449,19 @@ mod tests {
     }
 
     #[test]
+    fn receive_flags_do_not_block_or_truncate_protocol_changes() {
+        let flags = mangoapp_msgrcv_flags();
+        let payload_capacity = std::hint::black_box(MANGOAPP_PAYLOAD_CAPACITY);
+        assert_eq!(flags & libc::IPC_NOWAIT, libc::IPC_NOWAIT);
+        assert_eq!(flags & libc::MSG_NOERROR, 0);
+        assert!(payload_capacity >= 1024);
+        assert_eq!(
+            MANGOAPP_MESSAGE_BUFFER_SIZE,
+            size_of::<c_long>() + payload_capacity
+        );
+    }
+
+    #[test]
     fn active_source_is_checked_first() {
         assert_eq!(read_order_for_sources(2, Some(1)), vec![1, 0]);
         assert_eq!(read_order_for_sources(2, None), vec![0, 1]);
@@ -474,6 +487,23 @@ mod tests {
         let message = message_with_visible_frametime(1, 16_666_667);
         let payload_len = size_of::<MangoAppMsgV1>() - size_of::<c_long>();
         assert_eq!(
+            decode_message(&message_bytes(&message), payload_len, 1_000_000_000),
+            MangoAppReadOne::Sample(MangoAppFrameSample {
+                pid: 4242,
+                app_frametime_ns: 17_000_000,
+                visible_frametime_ns: 16_666_667,
+                latency_ns: 5_000_000,
+            })
+        );
+    }
+
+    #[test]
+    fn decodes_known_prefix_when_payload_has_future_fields() {
+        let message = message_with_visible_frametime(1, 16_666_667);
+        let mut message = message_bytes(&message);
+        message.extend([0xa5; 128]);
+        let payload_len = size_of::<MangoAppMsgV1>() - size_of::<c_long>() + 128;
+        assert_eq!(
             decode_message(&message, payload_len, 1_000_000_000),
             MangoAppReadOne::Sample(MangoAppFrameSample {
                 pid: 4242,
@@ -485,11 +515,27 @@ mod tests {
     }
 
     #[test]
+    fn optional_fields_require_complete_payloads() {
+        let message = message_with_visible_frametime(1, 16_666_667);
+        let payload_len =
+            payload_bytes_through::<u64>(offset_of!(MangoAppMsgV1, visible_frametime_ns));
+        assert_eq!(
+            decode_message(&message_bytes(&message), payload_len, 1_000_000_000),
+            MangoAppReadOne::Sample(MangoAppFrameSample {
+                pid: 4242,
+                app_frametime_ns: 0,
+                visible_frametime_ns: 16_666_667,
+                latency_ns: 0,
+            })
+        );
+    }
+
+    #[test]
     fn rejects_invalid_version() {
         let message = message_with_visible_frametime(2, 16_666_667);
         let payload_len = size_of::<MangoAppMsgV1>() - size_of::<c_long>();
         assert_eq!(
-            decode_message(&message, payload_len, 1_000_000_000),
+            decode_message(&message_bytes(&message), payload_len, 1_000_000_000),
             MangoAppReadOne::Dropped(MangoAppDropReason::UnsupportedVersion)
         );
     }
@@ -499,7 +545,7 @@ mod tests {
         let message = message_with_visible_frametime(1, 16_666_667);
         let payload_len = payload_bytes_through::<u32>(offset_of!(MangoAppMsgV1, pid));
         assert_eq!(
-            decode_message(&message, payload_len, 1_000_000_000),
+            decode_message(&message_bytes(&message), payload_len, 1_000_000_000),
             MangoAppReadOne::Dropped(MangoAppDropReason::TooShort)
         );
     }
@@ -514,7 +560,7 @@ mod tests {
             let message = message_with_visible_frametime(1, value);
             let payload_len = size_of::<MangoAppMsgV1>() - size_of::<c_long>();
             assert_eq!(
-                decode_message(&message, payload_len, 1_000_000_000),
+                decode_message(&message_bytes(&message), payload_len, 1_000_000_000),
                 MangoAppReadOne::Dropped(reason)
             );
         }

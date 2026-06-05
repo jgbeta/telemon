@@ -474,7 +474,8 @@ impl GameFpsRuntime {
                         .collect()
                 }
                 Err(error) => {
-                    warn!(%error, source = GAMESCOPE_FRAME_SOURCE, "game frame source read failed");
+                    let queue = reader.queue_label();
+                    warn!(%error, source = GAMESCOPE_FRAME_SOURCE, queue, "game frame source read failed");
                     self.reader = None;
                     self.source_supported = false;
                     self.source_up = false;
