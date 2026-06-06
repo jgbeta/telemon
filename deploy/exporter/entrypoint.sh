@@ -162,11 +162,20 @@ collectors:
     max_frame_time_milliseconds: ${TELEMON_STEAM_DECK_FPS_MAX_FRAME_TIME_MILLISECONDS:-1000}
     poll_interval_milliseconds: ${TELEMON_STEAM_DECK_FPS_POLL_INTERVAL_MILLISECONDS:-100}
     max_messages_per_poll: ${TELEMON_STEAM_DECK_FPS_MAX_MESSAGES_PER_POLL:-512}
+    source_preference: [${TELEMON_STEAM_DECK_FPS_SOURCE_PREFERENCE:-"gamescope_wayland", "mangohud_log", "gamescope_mangoapp"}]
+    gamescope_wayland:
+      enabled: $(bool_value "${TELEMON_STEAM_DECK_FPS_GAMESCOPE_WAYLAND_ENABLED:-false}")
+      display: "$(yaml_escape "${TELEMON_STEAM_DECK_FPS_GAMESCOPE_WAYLAND_DISPLAY:-}")"
+    mangohud_log:
+      enabled: $(bool_value "${TELEMON_STEAM_DECK_FPS_MANGOHUD_LOG_ENABLED:-false}")
+      paths: $(yaml_csv_list "${TELEMON_STEAM_DECK_FPS_MANGOHUD_LOG_PATHS:-}")
+      auto_discover: $(bool_value "${TELEMON_STEAM_DECK_FPS_MANGOHUD_LOG_AUTO_DISCOVER:-true}")
     gamescope_mangoapp:
       enabled: $(bool_value "${TELEMON_STEAM_DECK_FPS_MANGOAPP_ENABLED:-false}")
       ftok_path: "$(yaml_escape "${TELEMON_STEAM_DECK_FPS_MANGOAPP_FTOK_PATH:-mangoapp}")"
       project_id: ${TELEMON_STEAM_DECK_FPS_MANGOAPP_PROJECT_ID:-65}
       legacy_failed_ftok_fallback_enabled: $(bool_value "${TELEMON_STEAM_DECK_FPS_MANGOAPP_LEGACY_FAILED_FTOK_FALLBACK_ENABLED:-false}")
+      allow_destructive_read: $(bool_value "${TELEMON_STEAM_DECK_FPS_MANGOAPP_ALLOW_DESTRUCTIVE_READ:-false}")
     steam_library_roots: $(yaml_csv_list "${TELEMON_STEAM_DECK_FPS_STEAM_LIBRARY_ROOTS:-}")
   nvidia_nvml:
     enabled: $(bool_value "$NVIDIA_NVML_ENABLED")

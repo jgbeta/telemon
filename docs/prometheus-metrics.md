@@ -23,6 +23,10 @@ metrics from `/fps` through:
 
 - `telemon-fps`
 
+The `/fps` `source` label can be `gamescope_wayland`, `mangohud_log`, or
+`gamescope_mangoapp`. Steam Deck Gaming Mode prefers `gamescope_wayland`; the
+other sources are fallbacks or diagnostics.
+
 The registry adds these labels to discovered targets, so Prometheus stores them
 on scraped series:
 

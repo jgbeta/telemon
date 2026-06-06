@@ -233,9 +233,17 @@ pub struct SteamDeckFpsConfig {
     pub poll_interval_milliseconds: u64,
     pub max_messages_per_poll: u64,
     pub source_preference: Vec<String>,
+    pub gamescope_wayland: GamescopeWaylandConfig,
     pub mangohud_log: MangoHudLogConfig,
     pub gamescope_mangoapp: GamescopeMangoappConfig,
     pub steam_library_roots: Vec<PathBuf>,
+}
+
+#[derive(Debug, Clone, Default, Serialize, Deserialize)]
+#[serde(default)]
+pub struct GamescopeWaylandConfig {
+    pub enabled: bool,
+    pub display: String,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -514,7 +522,7 @@ impl AppConfig {
             .enumerate()
         {
             match source.as_str() {
-                "mangohud_log" | "gamescope_mangoapp" => {}
+                "gamescope_wayland" | "mangohud_log" | "gamescope_mangoapp" => {}
                 _ => bail!(
                     "collectors.steam_deck_fps.source_preference[{index}] has unsupported source {source:?}"
                 ),
@@ -893,7 +901,12 @@ impl Default for SteamDeckFpsConfig {
             max_frame_time_milliseconds: 1_000,
             poll_interval_milliseconds: 100,
             max_messages_per_poll: 512,
-            source_preference: vec!["mangohud_log".to_string(), "gamescope_mangoapp".to_string()],
+            source_preference: vec![
+                "gamescope_wayland".to_string(),
+                "mangohud_log".to_string(),
+                "gamescope_mangoapp".to_string(),
+            ],
+            gamescope_wayland: GamescopeWaylandConfig::default(),
             mangohud_log: MangoHudLogConfig::default(),
             gamescope_mangoapp: GamescopeMangoappConfig::default(),
             steam_library_roots: Vec::new(),
@@ -1173,8 +1186,9 @@ mod tests {
         assert_eq!(config.collectors.steam_deck_fps.max_messages_per_poll, 512);
         assert_eq!(
             config.collectors.steam_deck_fps.source_preference,
-            vec!["mangohud_log", "gamescope_mangoapp"]
+            vec!["gamescope_wayland", "mangohud_log", "gamescope_mangoapp"]
         );
+        assert!(!config.collectors.steam_deck_fps.gamescope_wayland.enabled);
         assert!(!config.collectors.steam_deck_fps.mangohud_log.enabled);
         assert!(config.collectors.steam_deck_fps.mangohud_log.auto_discover);
         assert!(config

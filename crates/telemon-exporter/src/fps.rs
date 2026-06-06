@@ -8,6 +8,8 @@ use tokio::sync::watch;
 use tracing::{debug, warn};
 
 use crate::cache::SharedMetricCache;
+#[cfg(target_os = "linux")]
+use telemon_collectors::game::gamescope_wayland::GamescopeWaylandFrameReader;
 use telemon_collectors::game::live_window::RollingFrameWindow;
 #[cfg(target_os = "linux")]
 use telemon_collectors::game::mangoapp::MangoAppFrameReader;
@@ -20,6 +22,7 @@ use telemon_core::metrics::model::MetricSample;
 use telemon_core::metrics::names;
 
 const GAMESCOPE_STATE_SOURCE: &str = "gamescope";
+const GAMESCOPE_WAYLAND_SOURCE: &str = "gamescope_wayland";
 const GAMESCOPE_FRAME_SOURCE: &str = "gamescope_mangoapp";
 const MANGOHUD_LOG_SOURCE: &str = "mangohud_log";
 const FRAME_SOURCE_QUEUE_NOT_APPLICABLE: &str = "not_applicable";
@@ -30,7 +33,7 @@ const FRAME_SOURCE_UP_STALE_AFTER: Duration = Duration::from_secs(2);
 const MANGOHUD_LOG_DISCOVERY_INTERVAL: Duration = Duration::from_secs(1);
 
 pub fn disabled_metrics() -> Vec<MetricSample> {
-    let source_labels = labels(&[("source", GAMESCOPE_FRAME_SOURCE)]);
+    let source_labels = labels(&[("source", GAMESCOPE_WAYLAND_SOURCE)]);
     vec![
         MetricSample::gauge(
             names::GAME_SESSION_ACTIVE,
@@ -129,6 +132,7 @@ struct FrameInput {
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
 enum FrameSourceKind {
+    GamescopeWayland,
     MangoHudLog,
     GamescopeMangoapp,
 }
@@ -136,6 +140,7 @@ enum FrameSourceKind {
 impl FrameSourceKind {
     fn from_config_name(value: &str) -> Option<Self> {
         match value {
+            GAMESCOPE_WAYLAND_SOURCE => Some(Self::GamescopeWayland),
             MANGOHUD_LOG_SOURCE => Some(Self::MangoHudLog),
             GAMESCOPE_FRAME_SOURCE => Some(Self::GamescopeMangoapp),
             _ => None,
@@ -144,6 +149,7 @@ impl FrameSourceKind {
 
     fn metric_source(self) -> &'static str {
         match self {
+            Self::GamescopeWayland => GAMESCOPE_WAYLAND_SOURCE,
             Self::MangoHudLog => MANGOHUD_LOG_SOURCE,
             Self::GamescopeMangoapp => GAMESCOPE_FRAME_SOURCE,
         }
@@ -151,6 +157,7 @@ impl FrameSourceKind {
 
     fn unavailable_queue_label(self) -> &'static str {
         match self {
+            Self::GamescopeWayland => FRAME_SOURCE_QUEUE_NOT_APPLICABLE,
             Self::MangoHudLog => FRAME_SOURCE_QUEUE_NOT_APPLICABLE,
             Self::GamescopeMangoapp => FRAME_SOURCE_QUEUE_UNAVAILABLE,
         }
@@ -322,6 +329,7 @@ struct GameFpsRuntime {
     dropped_invalid_sentinel_total: u64,
     dropped_unsupported_version_total: u64,
     dropped_too_short_total: u64,
+    dropped_wrong_session_total: u64,
     last_sample_timestamp_seconds: Option<u64>,
     last_sample_instant: Option<Instant>,
     last_sample_interval: Option<Duration>,
@@ -333,7 +341,10 @@ struct GameFpsRuntime {
     source_health: BTreeMap<FrameSourceKind, FrameSourceHealth>,
     mangohud_log_tail: MangoHudLogTail,
     start: Instant,
-    last_open_attempt: Option<Instant>,
+    last_wayland_open_attempt: Option<Instant>,
+    last_mangoapp_open_attempt: Option<Instant>,
+    #[cfg(target_os = "linux")]
+    wayland_reader: Option<GamescopeWaylandFrameReader>,
     #[cfg(target_os = "linux")]
     reader: Option<MangoAppFrameReader>,
 }
@@ -380,6 +391,7 @@ impl GameFpsRuntime {
             dropped_invalid_sentinel_total: 0,
             dropped_unsupported_version_total: 0,
             dropped_too_short_total: 0,
+            dropped_wrong_session_total: 0,
             last_sample_timestamp_seconds: None,
             last_sample_instant: None,
             last_sample_interval: None,
@@ -391,7 +403,10 @@ impl GameFpsRuntime {
             source_health,
             mangohud_log_tail: MangoHudLogTail::default(),
             start: Instant::now(),
-            last_open_attempt: None,
+            last_wayland_open_attempt: None,
+            last_mangoapp_open_attempt: None,
+            #[cfg(target_os = "linux")]
+            wayland_reader: None,
             #[cfg(target_os = "linux")]
             reader: None,
         }
@@ -573,7 +588,7 @@ impl GameFpsRuntime {
             ("too_large", self.dropped_too_large_total),
             ("stale", 0),
             ("out_of_order", 0),
-            ("wrong_session", 0),
+            ("wrong_session", self.dropped_wrong_session_total),
         ] {
             metrics.push(MetricSample::counter(
                 names::GAME_FPS_SOURCE_SAMPLE_DROPS_TOTAL,
@@ -761,8 +776,15 @@ impl GameFpsRuntime {
     }
 
     fn refresh_frame_source_status(&mut self) {
-        if let Some(source) = configured_frame_sources(&self.config).into_iter().next() {
+        for source in configured_frame_sources(&self.config) {
             match source {
+                FrameSourceKind::GamescopeWayland => {
+                    self.set_frame_source(
+                        FrameSourceKind::GamescopeWayland,
+                        FRAME_SOURCE_QUEUE_NOT_APPLICABLE,
+                    );
+                    self.try_open_wayland_reader();
+                }
                 FrameSourceKind::MangoHudLog => {
                     self.set_frame_source(
                         FrameSourceKind::MangoHudLog,
@@ -781,34 +803,43 @@ impl GameFpsRuntime {
                     self.try_open_mangoapp_reader();
                 }
             }
-            return;
+
+            if let Some(health) = self.source_health.get(&source).copied() {
+                if health.supported {
+                    self.set_frame_source(source, health.queue_label);
+                    self.source_supported = health.supported;
+                    self.source_up = false;
+                    self.record_selected_source_health();
+                    return;
+                }
+            }
         }
+
         self.source_supported = false;
         self.source_up = false;
         self.record_source_health(
-            FrameSourceKind::GamescopeMangoapp,
+            FrameSourceKind::GamescopeWayland,
             false,
             false,
-            FRAME_SOURCE_QUEUE_UNAVAILABLE,
+            FRAME_SOURCE_QUEUE_NOT_APPLICABLE,
         );
     }
 
     fn read_frames(&mut self) -> Vec<FrameInput> {
-        if let Some(source) = configured_frame_sources(&self.config).into_iter().next() {
-            match source {
-                FrameSourceKind::MangoHudLog => {
-                    self.set_frame_source(
-                        FrameSourceKind::MangoHudLog,
-                        FRAME_SOURCE_QUEUE_NOT_APPLICABLE,
-                    );
-                    return self.read_mangohud_log_frames();
-                }
-                FrameSourceKind::GamescopeMangoapp => {
-                    self.set_frame_source(
-                        FrameSourceKind::GamescopeMangoapp,
-                        FRAME_SOURCE_QUEUE_UNAVAILABLE,
-                    );
-                    return self.read_mangoapp_frames();
+        for source in configured_frame_sources(&self.config) {
+            self.set_frame_source(source, source.unavailable_queue_label());
+            let frames = match source {
+                FrameSourceKind::GamescopeWayland => self.read_wayland_frames(),
+                FrameSourceKind::MangoHudLog => self.read_mangohud_log_frames(),
+                FrameSourceKind::GamescopeMangoapp => self.read_mangoapp_frames(),
+            };
+
+            if let Some(health) = self.source_health.get(&source).copied() {
+                if health.supported {
+                    self.set_frame_source(source, health.queue_label);
+                    self.source_supported = health.supported;
+                    self.source_up = health.up;
+                    return frames;
                 }
             }
         }
@@ -816,6 +847,92 @@ impl GameFpsRuntime {
         self.source_supported = false;
         self.source_up = false;
         Vec::new()
+    }
+
+    fn read_wayland_frames(&mut self) -> Vec<FrameInput> {
+        #[cfg(target_os = "linux")]
+        {
+            self.try_open_wayland_reader();
+            let Some(app_id) = self.current_app_id else {
+                self.source_up = false;
+                self.record_source_health(
+                    FrameSourceKind::GamescopeWayland,
+                    self.source_supported,
+                    false,
+                    FRAME_SOURCE_QUEUE_NOT_APPLICABLE,
+                );
+                return Vec::new();
+            };
+            let Some(reader) = &mut self.wayland_reader else {
+                self.source_up = false;
+                return Vec::new();
+            };
+
+            let max_frame_time_ns = self
+                .config
+                .max_frame_time_milliseconds
+                .saturating_mul(1_000_000);
+            let max_messages = self
+                .config
+                .max_messages_per_poll
+                .try_into()
+                .unwrap_or(usize::MAX);
+            let mut samples = Vec::new();
+            match reader.read_available(app_id, max_frame_time_ns, max_messages, &mut samples) {
+                Ok(result) => {
+                    self.source_supported = true;
+                    self.samples_total = self
+                        .samples_total
+                        .saturating_add(result.samples_read as u64);
+                    self.dropped_zero_total =
+                        self.dropped_zero_total.saturating_add(result.dropped_zero);
+                    self.dropped_too_large_total = self
+                        .dropped_too_large_total
+                        .saturating_add(result.dropped_too_large);
+                    self.dropped_wrong_session_total = self
+                        .dropped_wrong_session_total
+                        .saturating_add(result.dropped_wrong_session);
+                    let now = Instant::now();
+                    if result.samples_read > 0 {
+                        self.record_accepted_sample_timestamp(now);
+                        self.last_sample_payload_bytes = None;
+                        self.last_sample_output_width = None;
+                        self.last_sample_output_height = None;
+                    }
+                    self.refresh_source_up(now, self.last_state.is_game_running());
+                    self.record_source_health(
+                        FrameSourceKind::GamescopeWayland,
+                        self.source_supported,
+                        self.source_up,
+                        FRAME_SOURCE_QUEUE_NOT_APPLICABLE,
+                    );
+                    samples
+                        .into_iter()
+                        .map(|sample| FrameInput {
+                            visible_frametime_ns: sample.visible_frametime_ns,
+                        })
+                        .collect()
+                }
+                Err(error) => {
+                    warn!(%error, source = GAMESCOPE_WAYLAND_SOURCE, "Gamescope Wayland FPS source read failed");
+                    self.wayland_reader = None;
+                    self.set_frame_source(
+                        FrameSourceKind::GamescopeWayland,
+                        FRAME_SOURCE_QUEUE_NOT_APPLICABLE,
+                    );
+                    self.source_supported = false;
+                    self.source_up = false;
+                    self.record_selected_source_health();
+                    Vec::new()
+                }
+            }
+        }
+        #[cfg(not(target_os = "linux"))]
+        {
+            self.source_supported = false;
+            self.source_up = false;
+            Vec::new()
+        }
     }
 
     fn read_mangohud_log_frames(&mut self) -> Vec<FrameInput> {
@@ -951,6 +1068,81 @@ impl GameFpsRuntime {
     }
 
     #[cfg(target_os = "linux")]
+    fn try_open_wayland_reader(&mut self) {
+        if !self.config.gamescope_wayland.enabled {
+            self.wayland_reader = None;
+            self.source_supported = false;
+            self.source_up = false;
+            self.record_source_health(
+                FrameSourceKind::GamescopeWayland,
+                false,
+                false,
+                FRAME_SOURCE_QUEUE_NOT_APPLICABLE,
+            );
+            return;
+        }
+
+        let now = Instant::now();
+        if self.wayland_reader.is_some() {
+            self.set_frame_source(
+                FrameSourceKind::GamescopeWayland,
+                FRAME_SOURCE_QUEUE_NOT_APPLICABLE,
+            );
+            self.source_supported = true;
+            self.refresh_source_up(now, self.last_state.is_game_running());
+            self.record_selected_source_health();
+            return;
+        }
+
+        if self
+            .last_wayland_open_attempt
+            .is_some_and(|last| now.duration_since(last) < Duration::from_secs(1))
+        {
+            return;
+        }
+        self.last_wayland_open_attempt = Some(now);
+
+        match GamescopeWaylandFrameReader::open(&self.config.gamescope_wayland) {
+            Ok(reader) => {
+                self.wayland_reader = Some(reader);
+                self.set_frame_source(
+                    FrameSourceKind::GamescopeWayland,
+                    FRAME_SOURCE_QUEUE_NOT_APPLICABLE,
+                );
+                self.source_supported = true;
+                self.refresh_source_up(now, self.last_state.is_game_running());
+                self.record_selected_source_health();
+                debug!(
+                    source = GAMESCOPE_WAYLAND_SOURCE,
+                    "Gamescope Wayland FPS source opened"
+                );
+            }
+            Err(error) => {
+                self.set_frame_source(
+                    FrameSourceKind::GamescopeWayland,
+                    FRAME_SOURCE_QUEUE_NOT_APPLICABLE,
+                );
+                self.source_supported = false;
+                self.source_up = false;
+                self.record_selected_source_health();
+                debug!(%error, source = GAMESCOPE_WAYLAND_SOURCE, "Gamescope Wayland FPS source unavailable");
+            }
+        }
+    }
+
+    #[cfg(not(target_os = "linux"))]
+    fn try_open_wayland_reader(&mut self) {
+        self.source_supported = false;
+        self.source_up = false;
+        self.record_source_health(
+            FrameSourceKind::GamescopeWayland,
+            false,
+            false,
+            FRAME_SOURCE_QUEUE_NOT_APPLICABLE,
+        );
+    }
+
+    #[cfg(target_os = "linux")]
     fn try_open_mangoapp_reader(&mut self) {
         if !self.config.gamescope_mangoapp.enabled {
             self.reader = None;
@@ -1025,12 +1217,12 @@ impl GameFpsRuntime {
         }
 
         if self
-            .last_open_attempt
+            .last_mangoapp_open_attempt
             .is_some_and(|last| now.duration_since(last) < Duration::from_secs(1))
         {
             return;
         }
-        self.last_open_attempt = Some(now);
+        self.last_mangoapp_open_attempt = Some(now);
         let max_frame_time_ns = self
             .config
             .max_frame_time_milliseconds
@@ -1086,27 +1278,39 @@ fn initial_frame_source(config: &SteamDeckFpsConfig) -> FrameSourceKind {
     configured_frame_sources(config)
         .into_iter()
         .next()
-        .unwrap_or(FrameSourceKind::GamescopeMangoapp)
+        .unwrap_or(FrameSourceKind::GamescopeWayland)
 }
 
 fn configured_frame_sources(config: &SteamDeckFpsConfig) -> Vec<FrameSourceKind> {
     let mut sources = Vec::new();
-    if config.mangohud_log.enabled {
-        sources.push(FrameSourceKind::MangoHudLog);
-    }
     for source in &config.source_preference {
         let Some(source) = FrameSourceKind::from_config_name(source) else {
             continue;
         };
-        let enabled = match source {
-            FrameSourceKind::MangoHudLog => config.mangohud_log.enabled,
-            FrameSourceKind::GamescopeMangoapp => config.gamescope_mangoapp.enabled,
-        };
-        if enabled && !sources.contains(&source) {
+        if source_enabled(config, source) && !sources.contains(&source) {
             sources.push(source);
         }
     }
+
+    for source in [
+        FrameSourceKind::GamescopeWayland,
+        FrameSourceKind::MangoHudLog,
+        FrameSourceKind::GamescopeMangoapp,
+    ] {
+        if source_enabled(config, source) && !sources.contains(&source) {
+            sources.push(source);
+        }
+    }
+
     sources
+}
+
+fn source_enabled(config: &SteamDeckFpsConfig, source: FrameSourceKind) -> bool {
+    match source {
+        FrameSourceKind::GamescopeWayland => config.gamescope_wayland.enabled,
+        FrameSourceKind::MangoHudLog => config.mangohud_log.enabled,
+        FrameSourceKind::GamescopeMangoapp => config.gamescope_mangoapp.enabled,
+    }
 }
 
 fn discover_mangohud_log_path(config: &MangoHudLogConfig) -> Option<PathBuf> {
@@ -1769,6 +1973,118 @@ mod tests {
             configured_frame_sources(&config),
             vec![FrameSourceKind::MangoHudLog]
         );
+    }
+
+    #[test]
+    fn gamescope_wayland_source_is_preferred_when_enabled() {
+        let config = SteamDeckFpsConfig {
+            enabled: true,
+            gamescope_wayland: telemon_core::config::GamescopeWaylandConfig {
+                enabled: true,
+                ..Default::default()
+            },
+            mangohud_log: MangoHudLogConfig {
+                enabled: true,
+                paths: Vec::new(),
+                auto_discover: false,
+            },
+            ..Default::default()
+        };
+        let runtime = GameFpsRuntime::new(config.clone(), SteamDeckGameStateConfig::default());
+
+        assert_eq!(
+            configured_frame_sources(&config),
+            vec![
+                FrameSourceKind::GamescopeWayland,
+                FrameSourceKind::MangoHudLog
+            ]
+        );
+        let metrics = runtime.metrics();
+        assert_eq!(
+            metric_value(
+                &metrics,
+                names::GAME_FPS_SOURCE_SELECTED,
+                &[("source", GAMESCOPE_WAYLAND_SOURCE)]
+            ),
+            Some(1.0)
+        );
+        assert_eq!(
+            metric_value(
+                &metrics,
+                names::GAME_FPS_SOURCE_SELECTED,
+                &[("source", MANGOHUD_LOG_SOURCE)]
+            ),
+            Some(0.0)
+        );
+    }
+
+    #[test]
+    fn unavailable_wayland_source_falls_through_to_mangohud_log() {
+        let unique = SystemTime::now()
+            .duration_since(UNIX_EPOCH)
+            .unwrap()
+            .as_nanos();
+        let dir = std::env::temp_dir().join(format!(
+            "telemon-wayland-fallback-test-{}-{unique}",
+            std::process::id()
+        ));
+        fs::create_dir_all(&dir).unwrap();
+        let log_path = dir.join("Spyro_2026-06-05_21-00-00.csv");
+        fs::write(
+            &log_path,
+            "--------------------FRAME METRICS--------------------\nfps,frametime,elapsed\n",
+        )
+        .unwrap();
+
+        let config = SteamDeckFpsConfig {
+            enabled: true,
+            source_preference: vec![
+                GAMESCOPE_WAYLAND_SOURCE.to_string(),
+                MANGOHUD_LOG_SOURCE.to_string(),
+            ],
+            gamescope_wayland: telemon_core::config::GamescopeWaylandConfig {
+                enabled: true,
+                display: dir.join("missing-gamescope-socket").display().to_string(),
+            },
+            mangohud_log: MangoHudLogConfig {
+                enabled: true,
+                paths: vec![dir.clone()],
+                auto_discover: false,
+            },
+            ..Default::default()
+        };
+        let mut runtime = GameFpsRuntime::new(config, SteamDeckGameStateConfig::default());
+        runtime.last_state = DeckGameState::GameFocusedVisible;
+        runtime.set_current_game(Some(996_580));
+
+        assert!(runtime.read_frames().is_empty());
+        let metrics = runtime.metrics();
+        assert_eq!(
+            metric_value(
+                &metrics,
+                names::GAME_FPS_SOURCE_SELECTED,
+                &[("source", MANGOHUD_LOG_SOURCE)]
+            ),
+            Some(1.0)
+        );
+        assert_eq!(
+            metric_value(
+                &metrics,
+                names::GAME_FPS_SOURCE_AVAILABLE,
+                &[("source", MANGOHUD_LOG_SOURCE)]
+            ),
+            Some(1.0)
+        );
+        assert_eq!(
+            metric_value(
+                &metrics,
+                names::GAME_FPS_SOURCE_AVAILABLE,
+                &[("source", GAMESCOPE_WAYLAND_SOURCE)]
+            ),
+            Some(0.0)
+        );
+
+        fs::remove_dir_all(&dir).unwrap();
     }
 
     #[test]

@@ -115,7 +115,10 @@ collectors:
     max_frame_time_milliseconds: 1000
     poll_interval_milliseconds: 100
     max_messages_per_poll: 512
-    source_preference: ["mangohud_log", "gamescope_mangoapp"]
+    source_preference: ["gamescope_wayland", "mangohud_log", "gamescope_mangoapp"]
+    gamescope_wayland:
+      enabled: false
+      display: ""
     mangohud_log:
       enabled: false
       paths: []

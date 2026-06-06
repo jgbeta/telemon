@@ -94,11 +94,17 @@ The bundled installer can find the bundled `telemon-exporter` binary automatical
 The generated Steam Deck profile enables Linux `hwmon`, `/proc` system metrics, `linux_power_supply`, `linux_amdgpu`, and optional `steam_deck_game_state` sampling detection. The AMDGPU collector reads Steam Deck/APU `gpu_metrics` when available for CPU temperature, APU power, GPU clocks, and throttle flags. Gamescope detection is non-fatal; Telemon reads Gamescope X11 atoms first, can discover Steam's `DISPLAY`/`XAUTHORITY`, and falls back to Desktop active-window or Steam process-tree detection before returning to temperature-based adaptive sampling.
 
 When `--enable-fps` is used, the profile also enables the gated `/fps` endpoint
-and prefers MangoHud-compatible log tailing before the direct Gamescope/MangoApp
-queue. The default source order is `mangohud_log`, then `gamescope_mangoapp`.
-For normal use with MangoHud enabled, configure MangoHud logging and let Telemon
-tail the newest CSV log from the configured paths or common user log locations.
-This avoids consuming frame messages from the same queue MangoHud uses.
+and prefers the non-destructive Gamescope Wayland performance-stat path in
+Gaming Mode. The default source order is `gamescope_wayland`, then
+`mangohud_log`, then `gamescope_mangoapp`. Telemon uses the active AppID from
+Gamescope game-state detection, requests `app_performance_stats`, and computes
+rolling FPS/frame-time aggregates locally. MangoHud can remain enabled.
+
+MangoHud CSV log tailing remains the passive fallback, especially for Desktop
+Mode or sessions where Gamescope Wayland is not available. Configure MangoHud
+logging and let Telemon tail the newest CSV log from the configured paths or
+common user log locations. This avoids consuming frame messages from the same
+queue MangoHud uses.
 
 A minimal MangoHud logging setup for frame-level testing is:
 
@@ -118,7 +124,7 @@ will be less exact. If you use a different folder, set
 `collectors.steam_deck_fps.mangohud_log.paths` to that folder and restart the
 exporter.
 
-Telemon exports rolling aggregate FPS, frame-time, 1% low, 0.1% low, 1% high,
+Telemon exports rolling aggregate FPS, frame-time, 1% low, 0.1% low,
 and pacing jitter metrics. It does not export raw per-frame samples. Game titles
 are resolved locally from Steam `appmanifest_<appid>.acf` files when available.
 
@@ -163,16 +169,24 @@ The installer does not change SteamOS firewall or router settings. If the local 
 
 ## FPS Troubleshooting
 
-If `/fps` shows `game_fps_source_selected{source="mangohud_log"} 1` and
+If `/fps` shows `game_fps_source_selected{source="gamescope_wayland"} 1` but
+`game_fps_source_available` is `0`, Telemon could not connect to the Gamescope
+Wayland socket. In Gaming Mode, confirm `/run/user/$(id -u)/gamescope-0` or
+`GAMESCOPE_WAYLAND_DISPLAY` exists and that the exporter runs as the `deck` user.
+Desktop Mode normally has no Gamescope session unless the game was explicitly
+launched under Gamescope.
+
+If `/fps` falls back to `game_fps_source_selected{source="mangohud_log"} 1` and
 `game_fps_source_available` is `0`, Telemon is waiting for a discoverable
 MangoHud CSV file. Confirm that MangoHud created a file under `/home/deck`,
 `/home/deck/mangologs`, `/home/deck/MangoHud`, `/home/deck/Documents`,
 `/home/deck/Desktop`, or a configured `mangohud_log.paths` directory.
 
 If `/fps` shows `game_fps_source_selected{source="gamescope_mangoapp"} 1`,
-the deployed config still enables direct queue mode or `mangohud_log.enabled` is
-false. Regenerate the Deck config with `--enable-fps --force-config`, or edit
-`~/.config/telemon/exporter.yml` so `mangohud_log.enabled: true` and
+the deployed config still enables direct queue mode, or both `gamescope_wayland`
+and `mangohud_log` are disabled/unavailable. Regenerate the Deck config with
+`--enable-fps --force-config`, or edit `~/.config/telemon/exporter.yml` so
+`gamescope_wayland.enabled: true`, `mangohud_log.enabled: true`, and
 `gamescope_mangoapp.enabled: false`.
 
 For direct queue diagnostics, use `/fps/debug` and compare
@@ -219,4 +233,4 @@ rm -rf ~/.config/telemon ~/.local/state/telemon/exporter
 
 ## Current Limits
 
-FPS telemetry is experimental. The preferred `mangohud_log` source requires MangoHud to write CSV logs; if `game_fps_source_selected{source="mangohud_log"}` is `1` but `game_fps_source_available` or `game_fps_source_healthy` remains `0`, Telemon is waiting for a candidate log or fresh rows. Check MangoHud logging and `mangohud_log.paths`. For `source="gamescope_mangoapp"`, check `/fps/debug`, `ipcs -q`, the debug-only `queue` label, and whether direct reads are disabled or blocked by a competing MangoHud/mangoapp consumer. Normal hardware telemetry and game-state sampling can still be working correctly. Fan control and TDP control are not implemented.
+FPS telemetry is experimental. The preferred `gamescope_wayland` source requires a same-user Gamescope session and an active AppID from game-state detection. If it is unavailable, Telemon falls back to MangoHud CSV logging when configured. For `source="gamescope_mangoapp"`, check `/fps/debug`, `ipcs -q`, the debug-only `queue` label, and whether direct reads are disabled or blocked by a competing MangoHud/mangoapp consumer. Normal hardware telemetry and game-state sampling can still be working correctly. Fan control and TDP control are not implemented.
