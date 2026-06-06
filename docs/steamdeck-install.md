@@ -119,7 +119,7 @@ will be less exact. If you use a different folder, set
 exporter.
 
 Telemon exports rolling aggregate FPS, frame-time, 1% low, 0.1% low, 1% high,
-and pacing jitter metrics. It does not export raw per-frame samples. Game names
+and pacing jitter metrics. It does not export raw per-frame samples. Game titles
 are resolved locally from Steam `appmanifest_<appid>.acf` files when available.
 
 The direct `gamescope_mangoapp` source remains useful for diagnostics and setups
@@ -147,6 +147,7 @@ curl http://127.0.0.1:9185/readyz
 curl http://127.0.0.1:9185/metrics
 curl http://127.0.0.1:9185/metrics/static
 curl http://127.0.0.1:9185/fps
+curl http://127.0.0.1:9185/fps/debug
 ```
 
 From the Prometheus host, validate that the Deck is reachable on the LAN:
@@ -155,23 +156,35 @@ From the Prometheus host, validate that the Deck is reachable on the LAN:
 curl http://<steam-deck-lan-ip>:9185/metrics
 curl http://<steam-deck-lan-ip>:9185/metrics/static
 curl http://<steam-deck-lan-ip>:9185/fps
+curl http://<steam-deck-lan-ip>:9185/fps/debug
 ```
 
 The installer does not change SteamOS firewall or router settings. If the local curl works but the Prometheus host cannot scrape, debug LAN reachability to TCP port `9185`.
 
 ## FPS Troubleshooting
 
-If `/fps` shows `game_frame_source_selected{source="mangohud_log"} 1` and
-`game_frame_source_supported` is `0`, Telemon is waiting for a discoverable
+If `/fps` shows `game_fps_source_selected{source="mangohud_log"} 1` and
+`game_fps_source_available` is `0`, Telemon is waiting for a discoverable
 MangoHud CSV file. Confirm that MangoHud created a file under `/home/deck`,
 `/home/deck/mangologs`, `/home/deck/MangoHud`, `/home/deck/Documents`,
 `/home/deck/Desktop`, or a configured `mangohud_log.paths` directory.
 
-If `/fps` shows `game_frame_source_selected{source="gamescope_mangoapp"} 1`,
+If `/fps` shows `game_fps_source_selected{source="gamescope_mangoapp"} 1`,
 the deployed config still enables direct queue mode or `mangohud_log.enabled` is
 false. Regenerate the Deck config with `--enable-fps --force-config`, or edit
 `~/.config/telemon/exporter.yml` so `mangohud_log.enabled: true` and
 `gamescope_mangoapp.enabled: false`.
+
+For direct queue diagnostics, use `/fps/debug` and compare
+`game_fps_source_healthy`, `game_fps_source_sample_age_s`,
+`game_fps_source_sample_payload_bytes`, `game_fps_source_output_pixels`, and
+`game_fps_source_backend_info`. A queue can contain parseable stale backlog; in
+that case `game_fps_source_samples_total` may increase once, but
+`game_fps_source_sample_age_s` keeps growing and `game_fps_source_healthy`
+remains `0`. Fresh live frames should keep sample age low and set
+`game_fps_source_healthy` to `1` while a game is active. Steam Deck MangoApp
+payloads larger than the known v1 prefix, such as 85-byte payloads, are expected
+and are parsed as append-only protocol extensions.
 
 ## Re-running
 
@@ -206,4 +219,4 @@ rm -rf ~/.config/telemon ~/.local/state/telemon/exporter
 
 ## Current Limits
 
-FPS telemetry is experimental. The preferred `mangohud_log` source requires MangoHud to write CSV logs; if `game_frame_source_selected{source="mangohud_log"}` is `1` but `game_frame_source_supported` or `game_frame_source_up` remains `0`, Telemon is waiting for a candidate log or fresh rows. Check MangoHud logging and `mangohud_log.paths`. For `source="gamescope_mangoapp"`, check `ipcs -q`, the `queue` label, and whether direct reads are disabled or blocked by a competing MangoHud/mangoapp consumer. Normal hardware telemetry and game-state sampling can still be working correctly. Fan control and TDP control are not implemented.
+FPS telemetry is experimental. The preferred `mangohud_log` source requires MangoHud to write CSV logs; if `game_fps_source_selected{source="mangohud_log"}` is `1` but `game_fps_source_available` or `game_fps_source_healthy` remains `0`, Telemon is waiting for a candidate log or fresh rows. Check MangoHud logging and `mangohud_log.paths`. For `source="gamescope_mangoapp"`, check `/fps/debug`, `ipcs -q`, the debug-only `queue` label, and whether direct reads are disabled or blocked by a competing MangoHud/mangoapp consumer. Normal hardware telemetry and game-state sampling can still be working correctly. Fan control and TDP control are not implemented.

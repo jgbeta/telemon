@@ -16,7 +16,7 @@ use telemon_collectors::linux::gamescope::{DeckGameState, GamescopeDetector};
 use telemon_core::config::{
     AppConfig, MangoHudLogConfig, SteamDeckFpsConfig, SteamDeckGameStateConfig,
 };
-use telemon_core::metrics::model::{MetricKind, MetricSample};
+use telemon_core::metrics::model::MetricSample;
 use telemon_core::metrics::names;
 
 const GAMESCOPE_STATE_SOURCE: &str = "gamescope";
@@ -30,39 +30,59 @@ const FRAME_SOURCE_UP_STALE_AFTER: Duration = Duration::from_secs(2);
 const MANGOHUD_LOG_DISCOVERY_INTERVAL: Duration = Duration::from_secs(1);
 
 pub fn disabled_metrics() -> Vec<MetricSample> {
-    let source_labels = labels(&[("source", GAMESCOPE_FRAME_SOURCE), ("queue", "disabled")]);
+    let source_labels = labels(&[("source", GAMESCOPE_FRAME_SOURCE)]);
     vec![
         MetricSample::gauge(
-            names::GAME_ACTIVE,
+            names::GAME_SESSION_ACTIVE,
             "Whether a game session is active.",
-            labels(&[("source", GAMESCOPE_STATE_SOURCE)]),
+            labels(&[("state_source", GAMESCOPE_STATE_SOURCE)]),
             0.0,
         ),
         MetricSample::gauge(
-            names::GAME_FOCUSED,
+            names::GAME_SESSION_FOCUSED,
             "Whether the active game is focused and visible.",
-            labels(&[("source", GAMESCOPE_STATE_SOURCE)]),
+            labels(&[("state_source", GAMESCOPE_STATE_SOURCE)]),
             0.0,
         ),
         MetricSample::gauge(
-            names::GAME_FRAME_SOURCE_SELECTED,
-            "Whether this game frame timing source is currently selected.",
+            names::GAME_FPS_SOURCE_SELECTED,
+            "Whether this FPS source is currently selected.",
             source_labels.clone(),
             0.0,
         ),
         MetricSample::gauge(
-            names::GAME_FRAME_SOURCE_SUPPORTED,
-            "Whether a game frame timing source is available.",
+            names::GAME_FPS_SOURCE_AVAILABLE,
+            "Whether this FPS source is available.",
             source_labels.clone(),
             0.0,
         ),
         MetricSample::gauge(
-            names::GAME_FRAME_SOURCE_UP,
-            "Whether the game frame timing source is currently healthy.",
+            names::GAME_FPS_SOURCE_HEALTHY,
+            "Whether this FPS source is currently healthy.",
             source_labels,
             0.0,
         ),
     ]
+}
+
+pub fn clean_metrics(samples: Vec<MetricSample>) -> Vec<MetricSample> {
+    samples
+        .into_iter()
+        .filter(|sample| !is_debug_metric(&sample.name))
+        .collect()
+}
+
+pub fn debug_metrics_path(fps_metrics_path: &str) -> String {
+    format!("{}/debug", fps_metrics_path.trim_end_matches('/'))
+}
+
+fn is_debug_metric(name: &str) -> bool {
+    [
+        names::GAME_FPS_SOURCE_BACKEND_INFO,
+        names::GAME_FPS_SOURCE_SAMPLE_PAYLOAD_BYTES,
+        names::GAME_FPS_SOURCE_OUTPUT_PIXELS,
+    ]
+    .contains(&name)
 }
 
 pub async fn run_game_fps(
@@ -292,6 +312,7 @@ struct GameFpsRuntime {
     windows: Vec<WindowState>,
     current_app_id: Option<u32>,
     current_game_name: Option<String>,
+    session_start_timestamp_seconds: Option<u64>,
     last_state: DeckGameState,
     source_supported: bool,
     source_up: bool,
@@ -303,6 +324,10 @@ struct GameFpsRuntime {
     dropped_too_short_total: u64,
     last_sample_timestamp_seconds: Option<u64>,
     last_sample_instant: Option<Instant>,
+    last_sample_interval: Option<Duration>,
+    last_sample_payload_bytes: Option<usize>,
+    last_sample_output_width: Option<u32>,
+    last_sample_output_height: Option<u32>,
     frame_source: FrameSourceKind,
     frame_queue_label: &'static str,
     source_health: BTreeMap<FrameSourceKind, FrameSourceHealth>,
@@ -345,6 +370,7 @@ impl GameFpsRuntime {
             windows,
             current_app_id: None,
             current_game_name: None,
+            session_start_timestamp_seconds: None,
             last_state: DeckGameState::Idle,
             source_supported: false,
             source_up: false,
@@ -356,6 +382,10 @@ impl GameFpsRuntime {
             dropped_too_short_total: 0,
             last_sample_timestamp_seconds: None,
             last_sample_instant: None,
+            last_sample_interval: None,
+            last_sample_payload_bytes: None,
+            last_sample_output_width: None,
+            last_sample_output_height: None,
             frame_source,
             frame_queue_label: frame_source.unavailable_queue_label(),
             source_health,
@@ -408,13 +438,33 @@ impl GameFpsRuntime {
         }
         self.current_app_id = app_id;
         self.current_game_name = app_id.and_then(|id| self.title_resolver.resolve_name(id));
+        self.session_start_timestamp_seconds = app_id.map(|_| unix_timestamp_seconds());
         self.clear_windows();
+        self.clear_frame_sample_state();
+        self.source_up = false;
     }
 
     fn clear_windows(&mut self) {
         for window in &mut self.windows {
             window.window.clear();
         }
+    }
+
+    fn clear_frame_sample_state(&mut self) {
+        self.last_sample_instant = None;
+        self.last_sample_interval = None;
+        self.last_sample_timestamp_seconds = None;
+        self.last_sample_payload_bytes = None;
+        self.last_sample_output_width = None;
+        self.last_sample_output_height = None;
+    }
+
+    fn record_accepted_sample_timestamp(&mut self, now: Instant) {
+        self.last_sample_interval = self
+            .last_sample_instant
+            .map(|previous| now.saturating_duration_since(previous));
+        self.last_sample_timestamp_seconds = Some(unix_timestamp_seconds());
+        self.last_sample_instant = Some(now);
     }
 
     fn publish(&self, cache: &SharedMetricCache) {
@@ -427,30 +477,46 @@ impl GameFpsRuntime {
         let mut metrics = Vec::new();
         let active = self.last_state.is_game_running();
         let focused = self.last_state == DeckGameState::GameFocusedVisible;
-        let state_labels = self.labels(GAMESCOPE_STATE_SOURCE, None);
+        let state_labels = self.session_labels();
 
         metrics.push(MetricSample::gauge(
-            names::GAME_ACTIVE,
+            names::GAME_SESSION_ACTIVE,
             "Whether a game session is active.",
             state_labels.clone(),
             if active { 1.0 } else { 0.0 },
         ));
         metrics.push(MetricSample::gauge(
-            names::GAME_FOCUSED,
+            names::GAME_SESSION_FOCUSED,
             "Whether the active game is focused and visible.",
-            state_labels,
+            state_labels.clone(),
             if focused { 1.0 } else { 0.0 },
         ));
+        if active {
+            if let Some(timestamp) = self.session_start_timestamp_seconds {
+                metrics.push(MetricSample::gauge(
+                    names::GAME_SESSION_START_TS_S,
+                    "Unix timestamp when the current game session started.",
+                    state_labels.clone(),
+                    timestamp as f64,
+                ));
+            }
+        }
 
         if let Some(app_id) = self.current_app_id {
             let mut labels = BTreeMap::new();
             labels.insert("appid".to_string(), app_id.to_string());
-            labels.insert("source".to_string(), "steam_appmanifest".to_string());
-            if let Some(game_name) = &self.current_game_name {
-                labels.insert("game_name".to_string(), game_name.clone());
-            }
+            labels.insert(
+                "identity_source".to_string(),
+                "steam_appmanifest".to_string(),
+            );
+            labels.insert(
+                "title".to_string(),
+                self.current_game_name
+                    .clone()
+                    .unwrap_or_else(|| "unknown".to_string()),
+            );
             metrics.push(MetricSample::gauge(
-                names::GAME_IDENTITY_INFO,
+                names::GAME_SESSION_INFO,
                 "Game identity resolved from local Steam metadata.",
                 labels,
                 1.0,
@@ -463,10 +529,10 @@ impl GameFpsRuntime {
                 .get(&source)
                 .copied()
                 .unwrap_or_else(|| FrameSourceHealth::unavailable(source));
-            let source_labels = self.frame_source_labels_for(source, health.queue_label);
+            let source_labels = self.source_labels_for(source);
             metrics.push(MetricSample::gauge(
-                names::GAME_FRAME_SOURCE_SELECTED,
-                "Whether this game frame timing source is currently selected.",
+                names::GAME_FPS_SOURCE_SELECTED,
+                "Whether this FPS source is currently selected.",
                 source_labels.clone(),
                 if source == self.frame_source {
                     1.0
@@ -475,63 +541,94 @@ impl GameFpsRuntime {
                 },
             ));
             metrics.push(MetricSample::gauge(
-                names::GAME_FRAME_SOURCE_SUPPORTED,
-                "Whether a game frame timing source is available.",
+                names::GAME_FPS_SOURCE_AVAILABLE,
+                "Whether this FPS source is available.",
                 source_labels.clone(),
                 if health.supported { 1.0 } else { 0.0 },
             ));
             metrics.push(MetricSample::gauge(
-                names::GAME_FRAME_SOURCE_UP,
-                "Whether the game frame timing source is currently healthy.",
+                names::GAME_FPS_SOURCE_HEALTHY,
+                "Whether this FPS source is currently healthy.",
                 source_labels,
                 if health.up { 1.0 } else { 0.0 },
+            ));
+
+            metrics.push(MetricSample::gauge(
+                names::GAME_FPS_SOURCE_BACKEND_INFO,
+                "Backend-specific FPS source metadata.",
+                self.frame_source_debug_labels_for(source, health.queue_label),
+                1.0,
             ));
         }
 
         let source_labels = self.frame_source_labels();
         metrics.push(MetricSample::counter(
-            names::GAME_FRAME_SOURCE_SAMPLES_TOTAL,
-            "Total accepted frame timing samples read from the game frame source.",
+            names::GAME_FPS_SOURCE_SAMPLES_TOTAL,
+            "Total accepted frame timing samples read from the FPS source.",
             source_labels.clone(),
             self.samples_total as f64,
         ));
-        metrics.push(MetricSample::counter(
-            names::GAME_FRAME_SOURCE_DROPPED_TOTAL,
-            "Total frame timing samples dropped by sanity filters.",
-            self.frame_source_reason_labels("zero"),
-            self.dropped_zero_total as f64,
-        ));
-        metrics.push(MetricSample::counter(
-            names::GAME_FRAME_SOURCE_DROPPED_TOTAL,
-            "Total frame timing samples dropped by sanity filters.",
-            self.frame_source_reason_labels("too_large"),
-            self.dropped_too_large_total as f64,
-        ));
-        metrics.push(MetricSample::counter(
-            names::GAME_FRAME_SOURCE_DROPPED_TOTAL,
-            "Total frame timing samples dropped by sanity filters.",
-            self.frame_source_reason_labels("invalid_sentinel"),
-            self.dropped_invalid_sentinel_total as f64,
-        ));
-        metrics.push(MetricSample::counter(
-            names::GAME_FRAME_SOURCE_DROPPED_TOTAL,
-            "Total frame timing samples dropped by sanity filters.",
-            self.frame_source_reason_labels("unsupported_version"),
-            self.dropped_unsupported_version_total as f64,
-        ));
-        metrics.push(MetricSample::counter(
-            names::GAME_FRAME_SOURCE_DROPPED_TOTAL,
-            "Total frame timing samples dropped by sanity filters.",
-            self.frame_source_reason_labels("too_short"),
-            self.dropped_too_short_total as f64,
-        ));
+        for (reason, value) in [
+            ("invalid", self.dropped_invalid_total()),
+            ("too_large", self.dropped_too_large_total),
+            ("stale", 0),
+            ("out_of_order", 0),
+            ("wrong_session", 0),
+        ] {
+            metrics.push(MetricSample::counter(
+                names::GAME_FPS_SOURCE_SAMPLE_DROPS_TOTAL,
+                "Total frame timing samples dropped by source sanity filters.",
+                self.frame_source_reason_labels(reason),
+                value as f64,
+            ));
+        }
         if let Some(timestamp) = self.last_sample_timestamp_seconds {
             metrics.push(MetricSample::gauge(
-                names::GAME_FRAME_SOURCE_LAST_SAMPLE_TIMESTAMP_SECONDS,
-                "Unix timestamp of the last accepted game frame timing sample.",
-                source_labels,
+                names::GAME_FPS_SOURCE_SAMPLE_LAST_TS_S,
+                "Unix timestamp of the last accepted frame timing sample.",
+                source_labels.clone(),
                 timestamp as f64,
             ));
+        }
+        if let Some(last_sample) = self.last_sample_instant {
+            metrics.push(MetricSample::gauge(
+                names::GAME_FPS_SOURCE_SAMPLE_AGE_S,
+                "Age in seconds of the last accepted frame timing sample.",
+                source_labels.clone(),
+                last_sample.elapsed().as_secs_f64(),
+            ));
+        }
+        if let Some(interval) = self.last_sample_interval {
+            metrics.push(MetricSample::gauge(
+                names::GAME_FPS_SOURCE_SAMPLE_INTERVAL_MS,
+                "Wall-clock interval since the previous accepted frame timing sample.",
+                source_labels.clone(),
+                interval.as_secs_f64() * 1_000.0,
+            ));
+        }
+        let debug_source_labels = self.frame_source_debug_labels();
+        if let Some(payload_bytes) = self.last_sample_payload_bytes {
+            metrics.push(MetricSample::gauge(
+                names::GAME_FPS_SOURCE_SAMPLE_PAYLOAD_BYTES,
+                "Payload bytes in the last accepted frame timing sample.",
+                debug_source_labels.clone(),
+                payload_bytes as f64,
+            ));
+        }
+        for (axis, value) in [
+            ("width", self.last_sample_output_width),
+            ("height", self.last_sample_output_height),
+        ] {
+            if let Some(value) = value {
+                let mut labels = debug_source_labels.clone();
+                labels.insert("axis".to_string(), axis.to_string());
+                metrics.push(MetricSample::gauge(
+                    names::GAME_FPS_SOURCE_OUTPUT_PIXELS,
+                    "Game frame output dimension in pixels from the FPS source.",
+                    labels,
+                    value as f64,
+                ));
+            }
         }
 
         if active {
@@ -546,22 +643,13 @@ impl GameFpsRuntime {
         metrics
     }
 
-    fn labels(&self, source: &str, window: Option<&str>) -> BTreeMap<String, String> {
+    fn session_labels(&self) -> BTreeMap<String, String> {
         let mut labels = BTreeMap::new();
-        labels.insert("source".to_string(), source.to_string());
-        if let Some(window) = window {
-            labels.insert("window".to_string(), window.to_string());
-        }
-        if self.config.include_appid_label {
-            if let Some(app_id) = self.current_app_id {
-                labels.insert("appid".to_string(), app_id.to_string());
-            }
-        }
-        if self.config.include_game_name_label {
-            if let Some(game_name) = &self.current_game_name {
-                labels.insert("game_name".to_string(), game_name.clone());
-            }
-        }
+        labels.insert(
+            "state_source".to_string(),
+            GAMESCOPE_STATE_SOURCE.to_string(),
+        );
+        self.add_game_labels(&mut labels);
         labels
     }
 
@@ -570,30 +658,43 @@ impl GameFpsRuntime {
         if let Some(window) = window {
             labels.insert("window".to_string(), window.to_string());
         }
+        self.add_game_labels(&mut labels);
+        labels
+    }
+
+    fn add_game_labels(&self, labels: &mut BTreeMap<String, String>) {
         if self.config.include_appid_label {
             if let Some(app_id) = self.current_app_id {
                 labels.insert("appid".to_string(), app_id.to_string());
             }
         }
         if self.config.include_game_name_label {
-            if let Some(game_name) = &self.current_game_name {
-                labels.insert("game_name".to_string(), game_name.clone());
+            if let Some(title) = &self.current_game_name {
+                labels.insert("title".to_string(), title.clone());
             }
         }
-        labels
     }
 
     fn frame_source_labels(&self) -> BTreeMap<String, String> {
-        self.frame_source_labels_for(self.frame_source, self.frame_queue_label)
+        self.source_labels_for(self.frame_source)
     }
 
-    fn frame_source_labels_for(
+    fn source_labels_for(&self, source: FrameSourceKind) -> BTreeMap<String, String> {
+        let mut labels = BTreeMap::new();
+        labels.insert("source".to_string(), source.metric_source().to_string());
+        labels
+    }
+
+    fn frame_source_debug_labels(&self) -> BTreeMap<String, String> {
+        self.frame_source_debug_labels_for(self.frame_source, self.frame_queue_label)
+    }
+
+    fn frame_source_debug_labels_for(
         &self,
         source: FrameSourceKind,
         queue_label: &'static str,
     ) -> BTreeMap<String, String> {
-        let mut labels = BTreeMap::new();
-        labels.insert("source".to_string(), source.metric_source().to_string());
+        let mut labels = self.source_labels_for(source);
         labels.insert("queue".to_string(), queue_label.to_string());
         labels
     }
@@ -604,14 +705,20 @@ impl GameFpsRuntime {
         labels
     }
 
+    fn dropped_invalid_total(&self) -> u64 {
+        self.dropped_zero_total
+            .saturating_add(self.dropped_invalid_sentinel_total)
+            .saturating_add(self.dropped_unsupported_version_total)
+            .saturating_add(self.dropped_too_short_total)
+    }
+
     fn set_frame_source(&mut self, source: FrameSourceKind, queue_label: &'static str) {
         if self.frame_source != source || self.frame_queue_label != queue_label {
             self.frame_source = source;
             self.frame_queue_label = queue_label;
             self.clear_windows();
             self.source_up = false;
-            self.last_sample_instant = None;
-            self.last_sample_timestamp_seconds = None;
+            self.clear_frame_sample_state();
         }
         self.source_health
             .entry(source)
@@ -737,11 +844,14 @@ impl GameFpsRuntime {
                 self.samples_total = self
                     .samples_total
                     .saturating_add(result.frames.len() as u64);
+                let now = Instant::now();
                 if !result.frames.is_empty() {
-                    self.last_sample_timestamp_seconds = Some(unix_timestamp_seconds());
-                    self.last_sample_instant = Some(Instant::now());
+                    self.record_accepted_sample_timestamp(now);
+                    self.last_sample_payload_bytes = None;
+                    self.last_sample_output_width = None;
+                    self.last_sample_output_height = None;
                 }
-                self.refresh_source_up(Instant::now(), self.last_state.is_game_running());
+                self.refresh_source_up(now, self.last_state.is_game_running());
                 self.record_source_health(
                     FrameSourceKind::MangoHudLog,
                     self.source_supported,
@@ -799,11 +909,16 @@ impl GameFpsRuntime {
                     self.dropped_too_short_total = self
                         .dropped_too_short_total
                         .saturating_add(result.dropped_too_short);
+                    let now = Instant::now();
                     if result.samples_read > 0 {
-                        self.last_sample_timestamp_seconds = Some(unix_timestamp_seconds());
-                        self.last_sample_instant = Some(Instant::now());
+                        self.record_accepted_sample_timestamp(now);
+                        if let Some(sample) = samples.last() {
+                            self.last_sample_payload_bytes = Some(sample.payload_len);
+                            self.last_sample_output_width = sample.output_width;
+                            self.last_sample_output_height = sample.output_height;
+                        }
                     }
-                    self.refresh_source_up(Instant::now(), self.last_state.is_game_running());
+                    self.refresh_source_up(now, self.last_state.is_game_running());
                     self.record_selected_source_health();
                     samples
                         .into_iter()
@@ -1212,102 +1327,105 @@ fn summary_metrics(
     summary: &telemon_collectors::game::capture::CaptureSummary,
 ) -> Vec<MetricSample> {
     let mut metrics = Vec::new();
-    metrics.push(MetricSample::gauge(
-        names::GAME_FRAME_COUNT,
+    push_game_metric(
+        &mut metrics,
+        names::GAME_FRAME_SAMPLES,
         "Game frames observed in a rolling window.",
         base_labels.clone(),
         summary.frame_count as f64,
-    ));
-
+    );
     push_game_metric(
         &mut metrics,
-        names::GAME_FRAME_RATE_FPS,
-        "Game frame rate in frames per second.",
+        names::GAME_FPS_AVG,
+        "Average game frame rate in frames per second.",
         base_labels.clone(),
-        &[("stat", "average"), ("method", "total_time")],
         summary.average_fps,
     );
     push_game_metric(
         &mut metrics,
-        names::GAME_FRAME_RATE_FPS,
-        "Game frame rate in frames per second.",
+        names::GAME_FPS_LOW_1PCT,
+        "Average FPS across the worst 1% frame times.",
         base_labels.clone(),
-        &[("stat", "low_1pct"), ("method", "threshold")],
-        summary.low_1pct_fps_threshold,
-    );
-    push_game_metric(
-        &mut metrics,
-        names::GAME_FRAME_RATE_FPS,
-        "Game frame rate in frames per second.",
-        base_labels.clone(),
-        &[("stat", "low_1pct"), ("method", "tail_average")],
         summary.low_1pct_fps_average,
     );
     push_game_metric(
         &mut metrics,
-        names::GAME_FRAME_RATE_FPS,
-        "Game frame rate in frames per second.",
+        names::GAME_FPS_LOW_0_1PCT,
+        "Average FPS across the worst 0.1% frame times.",
         base_labels.clone(),
-        &[("stat", "low_0_1pct"), ("method", "threshold")],
-        summary.low_01pct_fps_threshold,
-    );
-    push_game_metric(
-        &mut metrics,
-        names::GAME_FRAME_RATE_FPS,
-        "Game frame rate in frames per second.",
-        base_labels.clone(),
-        &[("stat", "low_0_1pct"), ("method", "tail_average")],
         summary.low_01pct_fps_average,
     );
-    push_game_metric(
-        &mut metrics,
-        names::GAME_FRAME_RATE_FPS,
-        "Game frame rate in frames per second.",
-        base_labels.clone(),
-        &[("stat", "high_1pct"), ("method", "threshold")],
-        summary.high_1pct_fps_threshold,
-    );
-    push_game_metric(
-        &mut metrics,
-        names::GAME_FRAME_RATE_FPS,
-        "Game frame rate in frames per second.",
-        base_labels.clone(),
-        &[("stat", "high_1pct"), ("method", "tail_average")],
-        summary.high_1pct_fps_average,
-    );
 
-    for (stat, value) in [
-        ("average", summary.average_frame_time_seconds),
-        ("min", summary.min_frame_time_seconds),
-        ("max", summary.max_frame_time_seconds),
-        ("p50", summary.p50_frame_time_seconds),
-        ("p95", summary.p95_frame_time_seconds),
-        ("p99", summary.p99_frame_time_seconds),
+    for (name, help, value) in [
+        (
+            names::GAME_FRAME_TIME_AVG_MS,
+            "Average game frame time in milliseconds.",
+            summary.average_frame_time_seconds,
+        ),
+        (
+            names::GAME_FRAME_TIME_MIN_MS,
+            "Best game frame time in milliseconds.",
+            summary.min_frame_time_seconds,
+        ),
+        (
+            names::GAME_FRAME_TIME_MAX_MS,
+            "Worst game frame time in milliseconds.",
+            summary.max_frame_time_seconds,
+        ),
+        (
+            names::GAME_FRAME_TIME_P50_MS,
+            "Median game frame time in milliseconds.",
+            summary.p50_frame_time_seconds,
+        ),
+        (
+            names::GAME_FRAME_TIME_P95_MS,
+            "95th percentile game frame time in milliseconds.",
+            summary.p95_frame_time_seconds,
+        ),
+        (
+            names::GAME_FRAME_TIME_P99_MS,
+            "99th percentile game frame time in milliseconds.",
+            summary.p99_frame_time_seconds,
+        ),
     ] {
         push_game_metric(
             &mut metrics,
-            names::GAME_FRAMETIME_SECONDS,
-            "Game frame time in seconds.",
+            name,
+            help,
             base_labels.clone(),
-            &[("stat", stat)],
-            value,
+            value * 1_000.0,
         );
     }
 
     if let Some(jitter) = summary.jitter {
-        for (stat, value) in [
-            ("average", jitter.average_seconds),
-            ("p95", jitter.p95_seconds),
-            ("p99", jitter.p99_seconds),
-            ("max", jitter.max_seconds),
+        for (name, help, value) in [
+            (
+                names::GAME_FRAME_JITTER_AVG_MS,
+                "Average adjacent frame-time delta in milliseconds.",
+                jitter.average_seconds,
+            ),
+            (
+                names::GAME_FRAME_JITTER_P95_MS,
+                "95th percentile pacing jitter in milliseconds.",
+                jitter.p95_seconds,
+            ),
+            (
+                names::GAME_FRAME_JITTER_P99_MS,
+                "99th percentile pacing jitter in milliseconds.",
+                jitter.p99_seconds,
+            ),
+            (
+                names::GAME_FRAME_JITTER_MAX_MS,
+                "Worst pacing jitter in milliseconds.",
+                jitter.max_seconds,
+            ),
         ] {
             push_game_metric(
                 &mut metrics,
-                names::GAME_FRAME_PACING_JITTER_SECONDS,
-                "Adjacent game frame-time delta in seconds.",
+                name,
+                help,
                 base_labels.clone(),
-                &[("stat", stat)],
-                value,
+                value * 1_000.0,
             );
         }
     }
@@ -1319,14 +1437,10 @@ fn push_game_metric(
     metrics: &mut Vec<MetricSample>,
     name: &str,
     help: &str,
-    mut base_labels: BTreeMap<String, String>,
-    extra_labels: &[(&str, &str)],
+    base_labels: BTreeMap<String, String>,
     value: f64,
 ) {
-    for (key, value) in extra_labels {
-        base_labels.insert((*key).to_string(), (*value).to_string());
-    }
-    metrics.push(MetricSample::new(name, help, MetricKind::Gauge, base_labels, value).unwrap());
+    metrics.push(MetricSample::gauge(name, help, base_labels, value));
 }
 
 fn labels(pairs: &[(&str, &str)]) -> BTreeMap<String, String> {
@@ -1364,7 +1478,7 @@ mod tests {
     }
 
     #[test]
-    fn summary_metrics_include_appid_and_game_name_labels() {
+    fn summary_metrics_include_appid_and_title_labels() {
         let summary = CaptureStats::from_frame_times_ns([16_000_000, 17_000_000, 33_000_000])
             .summary()
             .unwrap();
@@ -1372,20 +1486,20 @@ mod tests {
         labels.insert("source".to_string(), GAMESCOPE_FRAME_SOURCE.to_string());
         labels.insert("window".to_string(), "1s".to_string());
         labels.insert("appid".to_string(), "1234".to_string());
-        labels.insert("game_name".to_string(), "Example Game".to_string());
+        labels.insert("title".to_string(), "Example Game".to_string());
 
         let metrics = summary_metrics(labels, &summary);
 
         assert!(metrics
             .iter()
-            .any(|metric| metric.name == names::GAME_FRAME_RATE_FPS));
+            .any(|metric| metric.name == names::GAME_FPS_AVG));
         assert!(metrics.iter().all(|metric| metric
             .labels
             .get("appid")
             .is_some_and(|value| value == "1234")));
         assert!(metrics.iter().all(|metric| metric
             .labels
-            .get("game_name")
+            .get("title")
             .is_some_and(|value| value == "Example Game")));
     }
 
@@ -1515,29 +1629,23 @@ mod tests {
         assert_eq!(
             metric_value(
                 &metrics,
-                names::GAME_FRAME_SOURCE_SELECTED,
-                &[
-                    ("source", MANGOHUD_LOG_SOURCE),
-                    ("queue", FRAME_SOURCE_QUEUE_NOT_APPLICABLE)
-                ]
+                names::GAME_FPS_SOURCE_SELECTED,
+                &[("source", MANGOHUD_LOG_SOURCE)]
             ),
             Some(1.0)
         );
         assert_eq!(
             metric_value(
                 &metrics,
-                names::GAME_FRAME_SOURCE_SUPPORTED,
-                &[
-                    ("source", MANGOHUD_LOG_SOURCE),
-                    ("queue", FRAME_SOURCE_QUEUE_NOT_APPLICABLE)
-                ]
+                names::GAME_FPS_SOURCE_AVAILABLE,
+                &[("source", MANGOHUD_LOG_SOURCE)]
             ),
             Some(0.0)
         );
         assert_eq!(
             metric_value(
                 &metrics,
-                names::GAME_FRAME_SOURCE_SELECTED,
+                names::GAME_FPS_SOURCE_SELECTED,
                 &[("source", GAMESCOPE_FRAME_SOURCE)]
             ),
             None
@@ -1573,18 +1681,15 @@ mod tests {
         assert_eq!(
             metric_value(
                 &metrics,
-                names::GAME_FRAME_SOURCE_SELECTED,
-                &[
-                    ("source", MANGOHUD_LOG_SOURCE),
-                    ("queue", FRAME_SOURCE_QUEUE_NOT_APPLICABLE)
-                ]
+                names::GAME_FPS_SOURCE_SELECTED,
+                &[("source", MANGOHUD_LOG_SOURCE)]
             ),
             Some(1.0)
         );
         assert_eq!(
             metric_value(
                 &metrics,
-                names::GAME_FRAME_SOURCE_SELECTED,
+                names::GAME_FPS_SOURCE_SELECTED,
                 &[("source", GAMESCOPE_FRAME_SOURCE)]
             ),
             Some(0.0)
@@ -1592,11 +1697,8 @@ mod tests {
         assert_eq!(
             metric_value(
                 &metrics,
-                names::GAME_FRAME_SOURCE_SUPPORTED,
-                &[
-                    ("source", MANGOHUD_LOG_SOURCE),
-                    ("queue", FRAME_SOURCE_QUEUE_NOT_APPLICABLE)
-                ]
+                names::GAME_FPS_SOURCE_AVAILABLE,
+                &[("source", MANGOHUD_LOG_SOURCE)]
             ),
             Some(0.0)
         );
@@ -1624,24 +1726,29 @@ mod tests {
         assert_eq!(
             metric_value(
                 &metrics,
-                names::GAME_FRAME_SOURCE_SELECTED,
-                &[
-                    ("source", GAMESCOPE_FRAME_SOURCE),
-                    ("queue", FRAME_SOURCE_QUEUE_DESTRUCTIVE_READ_DISABLED)
-                ]
+                names::GAME_FPS_SOURCE_SELECTED,
+                &[("source", GAMESCOPE_FRAME_SOURCE)]
             ),
             Some(1.0)
         );
         assert_eq!(
             metric_value(
                 &metrics,
-                names::GAME_FRAME_SOURCE_SUPPORTED,
+                names::GAME_FPS_SOURCE_AVAILABLE,
+                &[("source", GAMESCOPE_FRAME_SOURCE)]
+            ),
+            Some(0.0)
+        );
+        assert_eq!(
+            metric_value(
+                &metrics,
+                names::GAME_FPS_SOURCE_BACKEND_INFO,
                 &[
                     ("source", GAMESCOPE_FRAME_SOURCE),
                     ("queue", FRAME_SOURCE_QUEUE_DESTRUCTIVE_READ_DISABLED)
                 ]
             ),
-            Some(0.0)
+            Some(1.0)
         );
     }
 
@@ -1665,6 +1772,89 @@ mod tests {
     }
 
     #[test]
+    fn source_diagnostics_include_last_sample_metadata() {
+        let config = SteamDeckFpsConfig {
+            enabled: true,
+            gamescope_mangoapp: telemon_core::config::GamescopeMangoappConfig {
+                enabled: true,
+                allow_destructive_read: true,
+                ..Default::default()
+            },
+            ..Default::default()
+        };
+        let mut runtime = GameFpsRuntime::new(config, SteamDeckGameStateConfig::default());
+        runtime.set_frame_source(FrameSourceKind::GamescopeMangoapp, "configured_ftok");
+        runtime.last_state = DeckGameState::GameFocusedVisible;
+        runtime.source_supported = true;
+        runtime.source_up = true;
+        runtime.last_sample_timestamp_seconds = Some(12_345);
+        runtime.last_sample_instant = Some(Instant::now() - Duration::from_millis(1_500));
+        runtime.last_sample_interval = Some(Duration::from_millis(125));
+        runtime.last_sample_payload_bytes = Some(85);
+        runtime.last_sample_output_width = Some(1920);
+        runtime.last_sample_output_height = Some(1080);
+        runtime.record_selected_source_health();
+
+        let metrics = runtime.metrics();
+        let base_labels = &[("source", GAMESCOPE_FRAME_SOURCE)];
+        let debug_labels = &[
+            ("source", GAMESCOPE_FRAME_SOURCE),
+            ("queue", "configured_ftok"),
+        ];
+
+        assert_eq!(
+            metric_value(
+                &metrics,
+                names::GAME_FPS_SOURCE_SAMPLE_LAST_TS_S,
+                base_labels,
+            ),
+            Some(12_345.0)
+        );
+        let age = metric_value(&metrics, names::GAME_FPS_SOURCE_SAMPLE_AGE_S, base_labels).unwrap();
+        assert!((1.0..3.0).contains(&age), "unexpected sample age: {age}");
+        assert_eq!(
+            metric_value(
+                &metrics,
+                names::GAME_FPS_SOURCE_SAMPLE_INTERVAL_MS,
+                base_labels,
+            ),
+            Some(125.0)
+        );
+        assert_eq!(
+            metric_value(
+                &metrics,
+                names::GAME_FPS_SOURCE_SAMPLE_PAYLOAD_BYTES,
+                debug_labels,
+            ),
+            Some(85.0)
+        );
+        assert_eq!(
+            metric_value(
+                &metrics,
+                names::GAME_FPS_SOURCE_OUTPUT_PIXELS,
+                &[
+                    ("source", GAMESCOPE_FRAME_SOURCE),
+                    ("queue", "configured_ftok"),
+                    ("axis", "width")
+                ],
+            ),
+            Some(1920.0)
+        );
+        assert_eq!(
+            metric_value(
+                &metrics,
+                names::GAME_FPS_SOURCE_OUTPUT_PIXELS,
+                &[
+                    ("source", GAMESCOPE_FRAME_SOURCE),
+                    ("queue", "configured_ftok"),
+                    ("axis", "height")
+                ],
+            ),
+            Some(1080.0)
+        );
+    }
+
+    #[test]
     fn inactive_runtime_emits_source_health_without_frame_metrics() {
         let config = SteamDeckFpsConfig {
             enabled: true,
@@ -1675,9 +1865,30 @@ mod tests {
 
         assert!(metrics
             .iter()
-            .any(|metric| metric.name == names::GAME_ACTIVE));
+            .any(|metric| metric.name == names::GAME_SESSION_ACTIVE));
         assert!(!metrics
             .iter()
-            .any(|metric| metric.name == names::GAME_FRAME_COUNT));
+            .any(|metric| metric.name == names::GAME_FRAME_SAMPLES));
+    }
+
+    #[test]
+    fn clean_metrics_filters_debug_only_fps_metadata() {
+        let clean = MetricSample::gauge(
+            names::GAME_FPS_SOURCE_SELECTED,
+            "Selected.",
+            labels(&[("source", GAMESCOPE_FRAME_SOURCE)]),
+            1.0,
+        );
+        let debug = MetricSample::gauge(
+            names::GAME_FPS_SOURCE_BACKEND_INFO,
+            "Backend.",
+            labels(&[
+                ("source", GAMESCOPE_FRAME_SOURCE),
+                ("queue", "configured_ftok"),
+            ]),
+            1.0,
+        );
+
+        assert_eq!(clean_metrics(vec![clean.clone(), debug]), vec![clean]);
     }
 }

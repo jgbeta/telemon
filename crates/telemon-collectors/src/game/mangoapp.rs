@@ -19,6 +19,9 @@ pub struct MangoAppFrameSample {
     pub app_frametime_ns: u64,
     pub visible_frametime_ns: u64,
     pub latency_ns: u64,
+    pub output_width: Option<u32>,
+    pub output_height: Option<u32>,
+    pub payload_len: usize,
 }
 
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
@@ -350,6 +353,17 @@ fn decode_message(message: &[u8], payload_len: usize, max_frame_time_ns: u64) ->
         visible_frametime_ns,
         latency_ns: read_field(message, payload_len, offset_of!(MangoAppMsgV1, latency_ns))
             .unwrap_or_default(),
+        output_width: read_field(
+            message,
+            payload_len,
+            offset_of!(MangoAppMsgV1, output_width),
+        ),
+        output_height: read_field(
+            message,
+            payload_len,
+            offset_of!(MangoAppMsgV1, output_height),
+        ),
+        payload_len,
     })
 }
 
@@ -493,6 +507,9 @@ mod tests {
                 app_frametime_ns: 17_000_000,
                 visible_frametime_ns: 16_666_667,
                 latency_ns: 5_000_000,
+                output_width: Some(1280),
+                output_height: Some(800),
+                payload_len,
             })
         );
     }
@@ -510,6 +527,29 @@ mod tests {
                 app_frametime_ns: 17_000_000,
                 visible_frametime_ns: 16_666_667,
                 latency_ns: 5_000_000,
+                output_width: Some(1280),
+                output_height: Some(800),
+                payload_len,
+            })
+        );
+    }
+
+    #[test]
+    fn decodes_steam_deck_85_byte_payload_with_metadata() {
+        let message = message_with_visible_frametime(1, 31_920_000);
+        let mut message = message_bytes(&message);
+        let payload_len = 85;
+        message.resize(size_of::<c_long>() + payload_len, 0xa5);
+        assert_eq!(
+            decode_message(&message, payload_len, 1_000_000_000),
+            MangoAppReadOne::Sample(MangoAppFrameSample {
+                pid: 4242,
+                app_frametime_ns: 17_000_000,
+                visible_frametime_ns: 31_920_000,
+                latency_ns: 5_000_000,
+                output_width: Some(1280),
+                output_height: Some(800),
+                payload_len,
             })
         );
     }
@@ -526,6 +566,9 @@ mod tests {
                 app_frametime_ns: 0,
                 visible_frametime_ns: 16_666_667,
                 latency_ns: 0,
+                output_width: None,
+                output_height: None,
+                payload_len,
             })
         );
     }

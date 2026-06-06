@@ -54,15 +54,15 @@ default `honor_labels: false`, conflicting scraped labels can be renamed to
 | `exporter_build_info` | gauge | `/metrics/static` | exporter | `version`, `os`, `arch` | Build metadata; value is always `1`. |
 | `device_info` | gauge | `/metrics/static` | registration | `device_uuid`, `machine_uuid`, `user_name`, `device_name`, `os`, `os_version`, `arch` | Emitted only when registration is enabled and a device UUID exists; value is always `1`. |
 | `exporter_requested_scrape_interval_seconds` | gauge | `/metrics` | adaptive scheduler | none | Exporter-requested device-level scrape interval. |
-| `exporter_snapshot_last_update_timestamp_seconds` | gauge | `/metrics`, `/metrics/static` | exporter diagnostics | `kind` | Unix timestamp of the last dynamic/static snapshot cache update. |
-| `exporter_snapshot_age_seconds` | gauge | `/metrics`, `/metrics/static` | exporter diagnostics | `kind` | Age of the current dynamic/static snapshot cache. Low age with Grafana gaps points away from local collector lag. |
-| `exporter_snapshot_updates_total` | counter | `/metrics`, `/metrics/static` | exporter diagnostics | `kind` | Total dynamic/static snapshot cache updates. |
-| `exporter_scrape_requests_total` | counter | `/metrics`, `/metrics/static` | exporter diagnostics | `endpoint`, `status` | Total scrape requests observed by the exporter for metrics endpoints. |
-| `exporter_scrape_last_request_timestamp_seconds` | gauge | `/metrics`, `/metrics/static` | exporter diagnostics | `endpoint` | Unix timestamp of the last scrape request observed for each metrics endpoint. |
-| `exporter_scrape_request_gap_seconds` | gauge | `/metrics`, `/metrics/static` | exporter diagnostics | `endpoint` | Seconds between the two most recent scrape requests for each metrics endpoint. |
-| `exporter_scrape_gaps_total` | counter | `/metrics`, `/metrics/static` | exporter diagnostics | `endpoint` | Total scrape request gaps above the configured diagnostics threshold. |
-| `exporter_requested_scrape_interval_changes_total` | counter | `/metrics`, `/metrics/static` | exporter diagnostics | `from`, `to` | Total requested scrape interval transitions between adaptive buckets. |
-| `exporter_requested_scrape_interval_last_change_timestamp_seconds` | gauge | `/metrics`, `/metrics/static` | exporter diagnostics | none | Unix timestamp of the last requested scrape interval transition. |
+| `exporter_snapshot_last_update_timestamp_seconds` | gauge | `/metrics`, `/metrics/static`, `/fps/debug` | exporter diagnostics | `kind` | Unix timestamp of the last dynamic/static snapshot cache update. |
+| `exporter_snapshot_age_seconds` | gauge | `/metrics`, `/metrics/static`, `/fps/debug` | exporter diagnostics | `kind` | Age of the current dynamic/static snapshot cache. Low age with Grafana gaps points away from local collector lag. |
+| `exporter_snapshot_updates_total` | counter | `/metrics`, `/metrics/static`, `/fps/debug` | exporter diagnostics | `kind` | Total dynamic/static snapshot cache updates. |
+| `exporter_scrape_requests_total` | counter | `/metrics`, `/metrics/static`, `/fps/debug` | exporter diagnostics | `endpoint`, `status` | Total scrape requests observed by the exporter for metrics endpoints. |
+| `exporter_scrape_last_request_timestamp_seconds` | gauge | `/metrics`, `/metrics/static`, `/fps/debug` | exporter diagnostics | `endpoint` | Unix timestamp of the last scrape request observed for each metrics endpoint. |
+| `exporter_scrape_request_gap_seconds` | gauge | `/metrics`, `/metrics/static`, `/fps/debug` | exporter diagnostics | `endpoint` | Seconds between the two most recent scrape requests for each metrics endpoint. |
+| `exporter_scrape_gaps_total` | counter | `/metrics`, `/metrics/static`, `/fps/debug` | exporter diagnostics | `endpoint` | Total scrape request gaps above the configured diagnostics threshold. |
+| `exporter_requested_scrape_interval_changes_total` | counter | `/metrics`, `/metrics/static`, `/fps/debug` | exporter diagnostics | `from`, `to` | Total requested scrape interval transitions between adaptive buckets. |
+| `exporter_requested_scrape_interval_last_change_timestamp_seconds` | gauge | `/metrics`, `/metrics/static`, `/fps/debug` | exporter diagnostics | none | Unix timestamp of the last requested scrape interval transition. |
 | `exporter_collector_up` | gauge | `/metrics` | all collectors | `collector` | `1` when collector is healthy in the last run, otherwise `0`. |
 | `exporter_collector_supported` | gauge | `/metrics/static` | all collectors | `collector` | `1` when collector is supported on the host, otherwise `0`. |
 | `exporter_collector_errors_total` | counter | `/metrics` | all collectors | `collector` | Total collector errors observed by the exporter process. |
@@ -71,19 +71,35 @@ default `honor_labels: false`, conflicting scraped labels can be renamed to
 | `exporter_macos_macmon_snapshot_age_seconds` | gauge | `/metrics` | `macos_macmon` | none | Age of the latest cached macmon snapshot in seconds. |
 | `exporter_macos_macmon_reinitializations_total` | counter | `/metrics` | `macos_macmon` | none | Total macmon sampler reinitializations. |
 | `exporter_macos_macmon_invalid_samples_total` | counter | `/metrics` | `macos_macmon` | `field` | Total macmon fields skipped during normalization. |
-| `game_active` | gauge | `/fps` | `steam_deck_fps` | `source`, optional `appid`, `game_name` | `1` when a game session is active. |
-| `game_focused` | gauge | `/fps` | `steam_deck_fps` | `source`, optional `appid`, `game_name` | `1` when the active game is focused and visible. |
-| `game_identity_info` | gauge | `/fps` | `steam_deck_fps` | `appid`, optional `game_name`, `source` | Game identity resolved from local Steam app manifests. |
-| `game_frame_source_supported` | gauge | `/fps` | `steam_deck_fps` | `source`, `queue` | `1` when Telemon found a candidate frame timing source. |
-| `game_frame_source_selected` | gauge | `/fps` | `steam_deck_fps` | `source`, `queue` | `1` for the frame timing source currently selected by Telemon. |
-| `game_frame_source_up` | gauge | `/fps` | `steam_deck_fps` | `source`, `queue` | `1` when valid frame samples were received recently while a game is active. |
-| `game_frame_source_samples_total` | counter | `/fps` | `steam_deck_fps` | `source`, `queue` | Total accepted frame timing samples from the active source. |
-| `game_frame_source_dropped_total` | counter | `/fps` | `steam_deck_fps` | `source`, `queue`, `reason` | Frame timing samples dropped by source sanity filters. Reasons: `zero`, `too_large`, `invalid_sentinel`, `unsupported_version`, `too_short`. |
-| `game_frame_source_last_sample_timestamp_seconds` | gauge | `/fps` | `steam_deck_fps` | `source`, `queue` | Unix timestamp of the last accepted frame timing sample. |
-| `game_frame_count` | gauge | `/fps` | `steam_deck_fps` | `source`, `queue`, `window`, optional `appid`, `game_name` | Frame count in the rolling window. |
-| `game_frame_rate_fps` | gauge | `/fps` | `steam_deck_fps` | `source`, `queue`, `window`, `stat`, `method`, optional `appid`, `game_name` | Average FPS, 1% low, 0.1% low, and 1% high. |
-| `game_frametime_seconds` | gauge | `/fps` | `steam_deck_fps` | `source`, `queue`, `window`, `stat`, optional `appid`, `game_name` | Aggregate frame-time values in seconds. |
-| `game_frame_pacing_jitter_seconds` | gauge | `/fps` | `steam_deck_fps` | `source`, `queue`, `window`, `stat`, optional `appid`, `game_name` | Adjacent frame-time delta in seconds. |
+| `game_session_active` | gauge | `/fps` | `steam_deck_fps` | `state_source`, optional `appid`, `title` | `1` when a game session is active. |
+| `game_session_focused` | gauge | `/fps` | `steam_deck_fps` | `state_source`, optional `appid`, `title` | `1` when the active game is focused and visible. |
+| `game_session_info` | gauge | `/fps` | `steam_deck_fps` | `appid`, `title`, `identity_source` | Game identity resolved from local Steam metadata; value is always `1`. |
+| `game_session_start_ts_s` | gauge | `/fps` | `steam_deck_fps` | `state_source`, optional `appid`, `title` | Unix timestamp for the current game session start. |
+| `game_fps_source_selected` | gauge | `/fps` | `steam_deck_fps` | `source` | `1` for the FPS source currently selected by Telemon. |
+| `game_fps_source_available` | gauge | `/fps` | `steam_deck_fps` | `source` | `1` when Telemon found or connected to a candidate FPS source. |
+| `game_fps_source_healthy` | gauge | `/fps` | `steam_deck_fps` | `source` | `1` when valid frame samples were received recently while a game is active. |
+| `game_fps_source_samples_total` | counter | `/fps` | `steam_deck_fps` | `source` | Total accepted frame timing samples from the active source. |
+| `game_fps_source_sample_drops_total` | counter | `/fps` | `steam_deck_fps` | `source`, `reason` | Frame timing samples dropped by source sanity filters. Reasons: `invalid`, `too_large`, `stale`, `out_of_order`, `wrong_session`. |
+| `game_fps_source_sample_last_ts_s` | gauge | `/fps` | `steam_deck_fps` | `source` | Unix timestamp of the last accepted frame timing sample. |
+| `game_fps_source_sample_age_s` | gauge | `/fps` | `steam_deck_fps` | `source` | Age of the last accepted frame timing sample. |
+| `game_fps_source_sample_interval_ms` | gauge | `/fps` | `steam_deck_fps` | `source` | Wall-clock interval since the previous accepted frame timing sample. |
+| `game_frame_samples` | gauge | `/fps` | `steam_deck_fps` | `source`, `window`, optional `appid`, `title` | Frame samples in the rolling window. |
+| `game_fps_avg` | gauge | `/fps` | `steam_deck_fps` | `source`, `window`, optional `appid`, `title` | Average FPS in the rolling window. |
+| `game_fps_low_1pct` | gauge | `/fps` | `steam_deck_fps` | `source`, `window`, optional `appid`, `title` | Average FPS across the worst 1% frame times. |
+| `game_fps_low_0_1pct` | gauge | `/fps` | `steam_deck_fps` | `source`, `window`, optional `appid`, `title` | Average FPS across the worst 0.1% frame times. |
+| `game_frame_time_avg_ms` | gauge | `/fps` | `steam_deck_fps` | `source`, `window`, optional `appid`, `title` | Average frame time in milliseconds. |
+| `game_frame_time_min_ms` | gauge | `/fps` | `steam_deck_fps` | `source`, `window`, optional `appid`, `title` | Best frame time in milliseconds. |
+| `game_frame_time_max_ms` | gauge | `/fps` | `steam_deck_fps` | `source`, `window`, optional `appid`, `title` | Worst frame time in milliseconds. |
+| `game_frame_time_p50_ms` | gauge | `/fps` | `steam_deck_fps` | `source`, `window`, optional `appid`, `title` | Median frame time in milliseconds. |
+| `game_frame_time_p95_ms` | gauge | `/fps` | `steam_deck_fps` | `source`, `window`, optional `appid`, `title` | 95th percentile frame time in milliseconds. |
+| `game_frame_time_p99_ms` | gauge | `/fps` | `steam_deck_fps` | `source`, `window`, optional `appid`, `title` | 99th percentile frame time in milliseconds. |
+| `game_frame_jitter_avg_ms` | gauge | `/fps` | `steam_deck_fps` | `source`, `window`, optional `appid`, `title` | Average adjacent-frame delta in milliseconds. |
+| `game_frame_jitter_p95_ms` | gauge | `/fps` | `steam_deck_fps` | `source`, `window`, optional `appid`, `title` | 95th percentile pacing jitter in milliseconds. |
+| `game_frame_jitter_p99_ms` | gauge | `/fps` | `steam_deck_fps` | `source`, `window`, optional `appid`, `title` | 99th percentile pacing jitter in milliseconds. |
+| `game_frame_jitter_max_ms` | gauge | `/fps` | `steam_deck_fps` | `source`, `window`, optional `appid`, `title` | Worst pacing jitter in milliseconds. |
+| `game_fps_source_backend_info` | gauge | `/fps/debug` | `steam_deck_fps` | `source`, `queue` | Backend-specific FPS source metadata; value is always `1`. |
+| `game_fps_source_sample_payload_bytes` | gauge | `/fps/debug` | `steam_deck_fps` | `source`, `queue` | Payload bytes in the last accepted backend sample when available. |
+| `game_fps_source_output_pixels` | gauge | `/fps/debug` | `steam_deck_fps` | `source`, `queue`, `axis` | Output width/height reported by the backend when available. |
 | `macmon_cpu_temp_celsius` | gauge | `/metrics` | `macos_macmon` | optional `chip` | Average CPU temperature in Celsius from macmon. |
 | `macmon_gpu_temp_celsius` | gauge | `/metrics` | `macos_macmon` | optional `chip` | Average GPU temperature in Celsius from macmon. |
 | `macmon_cpu_power_watts` | gauge | `/metrics` | `macos_macmon` | optional `chip` | CPU power consumption in watts from macmon. |

@@ -22,6 +22,7 @@ struct HttpState {
     metrics_path: String,
     static_metrics_path: String,
     fps_metrics_path: String,
+    fps_debug_metrics_path: String,
     stale_after_seconds: u64,
     dynamic_scrape_gap_threshold_seconds: u64,
     static_scrape_gap_threshold_seconds: u64,
@@ -45,6 +46,7 @@ pub async fn serve(
         metrics_path: config.server.metrics_path.clone(),
         static_metrics_path: config.server.static_metrics_path.clone(),
         fps_metrics_path: config.server.fps_metrics_path.clone(),
+        fps_debug_metrics_path: fps::debug_metrics_path(&config.server.fps_metrics_path),
         stale_after_seconds: config.collection.scrape_cache_stale_after_seconds,
         dynamic_scrape_gap_threshold_seconds: config.diagnostics.scrape_gap_threshold_seconds,
         static_scrape_gap_threshold_seconds: config.diagnostics.scrape_gap_threshold_seconds.max(
@@ -149,6 +151,25 @@ async fn handle_connection(mut stream: TcpStream, state: Arc<HttpState>) -> Resu
             200,
             state.dynamic_scrape_gap_threshold_seconds,
         );
+        let samples = state
+            .game_cache
+            .as_ref()
+            .and_then(|cache| cache.read().ok().map(|cache| cache.snapshot()))
+            .unwrap_or_else(fps::disabled_metrics);
+        let metrics = encode::encode(&fps::clean_metrics(samples));
+        write_response(
+            &mut stream,
+            200,
+            "text/plain; version=0.0.4; charset=utf-8",
+            &metrics,
+        )
+        .await?;
+    } else if path == state.fps_debug_metrics_path {
+        state.diagnostics.record_scrape(
+            &state.fps_debug_metrics_path,
+            200,
+            state.dynamic_scrape_gap_threshold_seconds,
+        );
         let mut samples = state
             .game_cache
             .as_ref()
@@ -196,7 +217,7 @@ async fn handle_connection(mut stream: TcpStream, state: Arc<HttpState>) -> Resu
             &mut stream,
             200,
             "text/plain; charset=utf-8",
-            "telemon-exporter\nendpoints: /metrics /metrics/static /fps /json /healthz /readyz\n",
+            "telemon-exporter\nendpoints: /metrics /metrics/static /fps /fps/debug /json /healthz /readyz\n",
         )
         .await?;
     } else {
