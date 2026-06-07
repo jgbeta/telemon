@@ -1538,97 +1538,62 @@ fn summary_metrics(
         base_labels.clone(),
         summary.frame_count as f64,
     );
-    push_game_metric(
+    push_game_stat_metric(
         &mut metrics,
-        names::GAME_FPS_AVG,
-        "Average game frame rate in frames per second.",
-        base_labels.clone(),
+        names::GAME_FPS,
+        "Game frame rate in frames per second by statistic.",
+        &base_labels,
+        "avg",
         summary.average_fps,
     );
-    push_game_metric(
+    push_game_stat_metric(
         &mut metrics,
-        names::GAME_FPS_LOW_1PCT,
-        "Average FPS across the worst 1% frame times.",
-        base_labels.clone(),
+        names::GAME_FPS,
+        "Game frame rate in frames per second by statistic.",
+        &base_labels,
+        "low_1pct",
         summary.low_1pct_fps_average,
     );
-    push_game_metric(
+    push_game_stat_metric(
         &mut metrics,
-        names::GAME_FPS_LOW_0_1PCT,
-        "Average FPS across the worst 0.1% frame times.",
-        base_labels.clone(),
+        names::GAME_FPS,
+        "Game frame rate in frames per second by statistic.",
+        &base_labels,
+        "low_0_1pct",
         summary.low_01pct_fps_average,
     );
 
-    for (name, help, value) in [
-        (
-            names::GAME_FRAME_TIME_AVG_MS,
-            "Average game frame time in milliseconds.",
-            summary.average_frame_time_seconds,
-        ),
-        (
-            names::GAME_FRAME_TIME_MIN_MS,
-            "Best game frame time in milliseconds.",
-            summary.min_frame_time_seconds,
-        ),
-        (
-            names::GAME_FRAME_TIME_MAX_MS,
-            "Worst game frame time in milliseconds.",
-            summary.max_frame_time_seconds,
-        ),
-        (
-            names::GAME_FRAME_TIME_P50_MS,
-            "Median game frame time in milliseconds.",
-            summary.p50_frame_time_seconds,
-        ),
-        (
-            names::GAME_FRAME_TIME_P95_MS,
-            "95th percentile game frame time in milliseconds.",
-            summary.p95_frame_time_seconds,
-        ),
-        (
-            names::GAME_FRAME_TIME_P99_MS,
-            "99th percentile game frame time in milliseconds.",
-            summary.p99_frame_time_seconds,
-        ),
+    for (stat, value) in [
+        ("avg", summary.average_frame_time_seconds),
+        ("min", summary.min_frame_time_seconds),
+        ("max", summary.max_frame_time_seconds),
+        ("p50", summary.p50_frame_time_seconds),
+        ("p95", summary.p95_frame_time_seconds),
+        ("p99", summary.p99_frame_time_seconds),
     ] {
-        push_game_metric(
+        push_game_stat_metric(
             &mut metrics,
-            name,
-            help,
-            base_labels.clone(),
+            names::GAME_FRAME_MS,
+            "Game frame time in milliseconds by statistic.",
+            &base_labels,
+            stat,
             value * 1_000.0,
         );
     }
 
     if let Some(jitter) = summary.jitter {
-        for (name, help, value) in [
-            (
-                names::GAME_FRAME_JITTER_AVG_MS,
-                "Average adjacent frame-time delta in milliseconds.",
-                jitter.average_seconds,
-            ),
-            (
-                names::GAME_FRAME_JITTER_P95_MS,
-                "95th percentile pacing jitter in milliseconds.",
-                jitter.p95_seconds,
-            ),
-            (
-                names::GAME_FRAME_JITTER_P99_MS,
-                "99th percentile pacing jitter in milliseconds.",
-                jitter.p99_seconds,
-            ),
-            (
-                names::GAME_FRAME_JITTER_MAX_MS,
-                "Worst pacing jitter in milliseconds.",
-                jitter.max_seconds,
-            ),
+        for (stat, value) in [
+            ("avg", jitter.average_seconds),
+            ("p95", jitter.p95_seconds),
+            ("p99", jitter.p99_seconds),
+            ("max", jitter.max_seconds),
         ] {
-            push_game_metric(
+            push_game_stat_metric(
                 &mut metrics,
-                name,
-                help,
-                base_labels.clone(),
+                names::GAME_JITTER_MS,
+                "Adjacent frame-time delta in milliseconds by statistic.",
+                &base_labels,
+                stat,
                 value * 1_000.0,
             );
         }
@@ -1645,6 +1610,19 @@ fn push_game_metric(
     value: f64,
 ) {
     metrics.push(MetricSample::gauge(name, help, base_labels, value));
+}
+
+fn push_game_stat_metric(
+    metrics: &mut Vec<MetricSample>,
+    name: &str,
+    help: &str,
+    base_labels: &BTreeMap<String, String>,
+    stat: &str,
+    value: f64,
+) {
+    let mut labels = base_labels.clone();
+    labels.insert("stat".to_string(), stat.to_string());
+    metrics.push(MetricSample::gauge(name, help, labels, value));
 }
 
 fn labels(pairs: &[(&str, &str)]) -> BTreeMap<String, String> {

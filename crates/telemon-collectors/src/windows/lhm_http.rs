@@ -434,11 +434,11 @@ enum LhmValueKind {
     CurrentAmperes,
     PowerWatts,
     PowerLimitWatts,
-    ClockHertz,
+    ClockMegahertz,
     UtilizationRatio,
     FanSpeedRpm,
     FanSpeedRatio,
-    MemoryBytes,
+    MemoryMegabytes,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq)]
@@ -474,10 +474,10 @@ fn parse_lhm_value(value: &str, sensor: &LhmHttpSensor) -> Option<ParsedLhmValue
 
     if lower.ends_with("mhz") {
         return parse_number_before_unit(trimmed, "mhz").map(|value| ParsedLhmValue {
-            kind: LhmValueKind::ClockHertz,
+            kind: LhmValueKind::ClockMegahertz,
             metric_name: names::HARDWARE_CLOCK_HERTZ,
-            help: "Hardware clock speed in hertz.",
-            value: value * 1_000_000.0,
+            help: "Hardware frequency in decimal megahertz.",
+            value,
         });
     }
 
@@ -544,10 +544,10 @@ fn parse_lhm_value(value: &str, sensor: &LhmHttpSensor) -> Option<ParsedLhmValue
     }
 
     parse_memory_bytes(trimmed).map(|value| ParsedLhmValue {
-        kind: LhmValueKind::MemoryBytes,
+        kind: LhmValueKind::MemoryMegabytes,
         metric_name: names::HARDWARE_MEMORY_BYTES,
-        help: "Hardware memory bytes by state.",
-        value,
+        help: "Hardware memory in decimal megabytes by state.",
+        value: value / 1_000_000.0,
     })
 }
 
@@ -594,7 +594,7 @@ fn canonical_lhm_sensor_name(
         LhmValueKind::CurrentAmperes => format!("{}_current", normalized_sensor),
         LhmValueKind::PowerWatts => format!("{}_power", normalized_sensor),
         LhmValueKind::PowerLimitWatts => format!("{}_power_limit", normalized_sensor),
-        LhmValueKind::ClockHertz => format!("{}_clock", normalized_sensor),
+        LhmValueKind::ClockMegahertz => format!("{}_clock", normalized_sensor),
         LhmValueKind::UtilizationRatio => format!("{}_utilization", normalized_sensor),
         LhmValueKind::FanSpeedRpm => {
             if normalized_sensor.ends_with("_rpm") {
@@ -610,7 +610,7 @@ fn canonical_lhm_sensor_name(
                 format!("{}_fan_percent", normalized_sensor)
             }
         }
-        LhmValueKind::MemoryBytes => format!("{}_memory", normalized_sensor),
+        LhmValueKind::MemoryMegabytes => format!("{}_memory", normalized_sensor),
     }
 }
 
@@ -672,7 +672,7 @@ fn apply_lhm_kind_labels(
     metric_labels: &mut BTreeMap<String, String>,
 ) {
     match kind {
-        LhmValueKind::ClockHertz => {
+        LhmValueKind::ClockMegahertz => {
             let clock = if normalized_sensor.contains("memory") {
                 "memory"
             } else if normalized_sensor.contains("bus") {
@@ -695,7 +695,7 @@ fn apply_lhm_kind_labels(
         LhmValueKind::PowerLimitWatts => {
             metric_labels.insert("limit".to_string(), "current".to_string());
         }
-        LhmValueKind::MemoryBytes => {
+        LhmValueKind::MemoryMegabytes => {
             metric_labels.insert("memory".to_string(), "ram".to_string());
             let state = if normalized_sensor.contains("free") {
                 "free"
@@ -1394,7 +1394,7 @@ mod tests {
         assert!(result.metrics.iter().any(|metric| {
             metric.name == names::HARDWARE_CLOCK_HERTZ
                 && metric.labels.get("clock").map(String::as_str) == Some("core")
-                && metric.value == 2_520_000_000.0
+                && metric.value == 2_520.0
         }));
         assert!(result.metrics.iter().any(|metric| {
             metric.name == names::HARDWARE_UTILIZATION_RATIO

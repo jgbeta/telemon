@@ -1110,7 +1110,7 @@ fn nvme_to_metrics(
         };
         metrics.push(MetricSample::gauge(
             names::STORAGE_NAMESPACE_CAPACITY_BYTES,
-            "Linux NVMe namespace capacity in bytes.",
+            "Linux NVMe namespace capacity in decimal megabytes.",
             labels(&[
                 ("component", "storage"),
                 ("device_id", nvme.storage_id.as_str()),
@@ -1119,7 +1119,7 @@ fn nvme_to_metrics(
                 ("storage_id", nvme.storage_id.as_str()),
                 ("namespace", namespace.namespace.as_str()),
             ]),
-            size_bytes as f64,
+            size_bytes as f64 / 1_000_000.0,
         ));
     }
 
@@ -1680,7 +1680,7 @@ mod tests {
             metric.name == names::STORAGE_NAMESPACE_CAPACITY_BYTES
                 && metric.labels.get("storage_id").map(String::as_str) == Some("pci-0000:02:00.0")
                 && metric.labels.get("namespace").map(String::as_str) == Some("n1")
-                && metric.value == 4_000.0 * 512.0
+                && metric.value == 4_000.0 * 512.0 / 1_000_000.0
         }));
     }
 

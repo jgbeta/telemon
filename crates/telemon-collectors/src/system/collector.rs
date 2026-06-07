@@ -172,10 +172,14 @@ fn snapshot_to_metrics(config: &SystemConfig, snapshot: &SystemSnapshot) -> Vec<
 fn memory_metric(state: &str, value: u64) -> MetricSample {
     MetricSample::gauge(
         names::MEMORY_TOTAL_BYTES,
-        "System memory bytes by state.",
-        labels(&[("source", SOURCE), ("state", state)]),
-        value as f64,
+        "System memory in decimal megabytes by kind and state.",
+        labels(&[("source", SOURCE), ("kind", "ram"), ("state", state)]),
+        bytes_to_mb(value),
     )
+}
+
+fn bytes_to_mb(value: u64) -> f64 {
+    value as f64 / 1_000_000.0
 }
 
 fn normalize_cpu_usage_ratio(value: f64) -> Option<f64> {
@@ -426,8 +430,8 @@ mod tests {
     fn emits_uptime_memory_and_cpu_count() {
         let metrics = collect_from_snapshot(SystemSnapshot {
             uptime_seconds: Some(12_345.0),
-            memory_total_bytes: Some(16),
-            memory_available_bytes: Some(6),
+            memory_total_bytes: Some(16_000_000),
+            memory_available_bytes: Some(6_000_000),
             cpu_count: Some(10),
             cpu_usage_ratio: Some(0.25),
         });
@@ -440,7 +444,7 @@ mod tests {
             metric_value(
                 &metrics,
                 names::MEMORY_TOTAL_BYTES,
-                &[("source", SOURCE), ("state", "total")]
+                &[("source", SOURCE), ("kind", "ram"), ("state", "total")]
             ),
             Some(16.0)
         );
@@ -448,7 +452,7 @@ mod tests {
             metric_value(
                 &metrics,
                 names::MEMORY_AVAILABLE_BYTES,
-                &[("source", SOURCE), ("state", "available")]
+                &[("source", SOURCE), ("kind", "ram"), ("state", "available")]
             ),
             Some(6.0)
         );
@@ -456,7 +460,7 @@ mod tests {
             metric_value(
                 &metrics,
                 names::MEMORY_USED_BYTES,
-                &[("source", SOURCE), ("state", "used")]
+                &[("source", SOURCE), ("kind", "ram"), ("state", "used")]
             ),
             Some(10.0)
         );
@@ -523,7 +527,7 @@ mod tests {
         assert!(metric_value(
             &metrics,
             names::MEMORY_USED_BYTES,
-            &[("source", SOURCE), ("state", "used")]
+            &[("source", SOURCE), ("kind", "ram"), ("state", "used")]
         )
         .is_none());
     }

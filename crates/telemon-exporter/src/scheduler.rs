@@ -288,6 +288,7 @@ fn is_static_metric(metric: &MetricSample) -> bool {
         || name == names::HARDWARE_DEVICE_INFO
         || name == names::HARDWARE_GPU_CORES
         || name == names::HARDWARE_SENSOR_INFO
+        || name == names::STORAGE_DEVICE_INFO
         || name == names::STORAGE_NAMESPACE_CAPACITY_BYTES
         || name == names::SYSTEM_CPU_COUNT
         || name == names::SYSTEM_OS_INFO

@@ -55,26 +55,26 @@ default `honor_labels: false`, conflicting scraped labels can be renamed to
 | Metric | Type | Endpoint | Source | Exporter labels | Notes |
 | --- | --- | --- | --- | --- | --- |
 | `up` | gauge | all telemon scrape jobs | Prometheus | target labels | Prometheus-generated scrape success metric; value is `1` when the last scrape succeeded. |
-| `exporter_build_info` | gauge | `/metrics/static` | exporter | `version`, `os`, `arch` | Build metadata; value is always `1`. |
-| `device_info` | gauge | `/metrics/static` | registration | `device_uuid`, `machine_uuid`, `user_name`, `device_name`, `os`, `os_version`, `arch` | Emitted only when registration is enabled and a device UUID exists; value is always `1`. |
-| `exporter_requested_scrape_interval_seconds` | gauge | `/metrics` | adaptive scheduler | none | Exporter-requested device-level scrape interval. |
-| `exporter_snapshot_last_update_timestamp_seconds` | gauge | `/metrics`, `/metrics/static`, `/fps/debug` | exporter diagnostics | `kind` | Unix timestamp of the last dynamic/static snapshot cache update. |
-| `exporter_snapshot_age_seconds` | gauge | `/metrics`, `/metrics/static`, `/fps/debug` | exporter diagnostics | `kind` | Age of the current dynamic/static snapshot cache. Low age with Grafana gaps points away from local collector lag. |
-| `exporter_snapshot_updates_total` | counter | `/metrics`, `/metrics/static`, `/fps/debug` | exporter diagnostics | `kind` | Total dynamic/static snapshot cache updates. |
-| `exporter_scrape_requests_total` | counter | `/metrics`, `/metrics/static`, `/fps/debug` | exporter diagnostics | `endpoint`, `status` | Total scrape requests observed by the exporter for metrics endpoints. |
-| `exporter_scrape_last_request_timestamp_seconds` | gauge | `/metrics`, `/metrics/static`, `/fps/debug` | exporter diagnostics | `endpoint` | Unix timestamp of the last scrape request observed for each metrics endpoint. |
-| `exporter_scrape_request_gap_seconds` | gauge | `/metrics`, `/metrics/static`, `/fps/debug` | exporter diagnostics | `endpoint` | Seconds between the two most recent scrape requests for each metrics endpoint. |
-| `exporter_scrape_gaps_total` | counter | `/metrics`, `/metrics/static`, `/fps/debug` | exporter diagnostics | `endpoint` | Total scrape request gaps above the configured diagnostics threshold. |
-| `exporter_requested_scrape_interval_changes_total` | counter | `/metrics`, `/metrics/static`, `/fps/debug` | exporter diagnostics | `from`, `to` | Total requested scrape interval transitions between adaptive buckets. |
-| `exporter_requested_scrape_interval_last_change_timestamp_seconds` | gauge | `/metrics`, `/metrics/static`, `/fps/debug` | exporter diagnostics | none | Unix timestamp of the last requested scrape interval transition. |
-| `exporter_collector_up` | gauge | `/metrics` | all collectors | `collector` | `1` when collector is healthy in the last run, otherwise `0`. |
-| `exporter_collector_supported` | gauge | `/metrics/static` | all collectors | `collector` | `1` when collector is supported on the host, otherwise `0`. |
-| `exporter_collector_errors_total` | counter | `/metrics` | all collectors | `collector` | Total collector errors observed by the exporter process. |
-| `exporter_collector_last_success_timestamp_seconds` | gauge | `/metrics` | all collectors | `collector` | Unix timestamp of last successful collector run. |
-| `exporter_collector_samples` | gauge | `/metrics` | `linux_hwmon`, `macos_macmon` | `collector`, `kind` | Useful sample count from the last collection run; `linux_hwmon` uses `kind="temperature"` and `macos_macmon` uses `kind="dynamic"`. |
-| `exporter_macos_macmon_snapshot_age_seconds` | gauge | `/metrics` | `macos_macmon` | none | Age of the latest cached macmon snapshot in seconds. |
-| `exporter_macos_macmon_reinitializations_total` | counter | `/metrics` | `macos_macmon` | none | Total macmon sampler reinitializations. |
-| `exporter_macos_macmon_invalid_samples_total` | counter | `/metrics` | `macos_macmon` | `field` | Total macmon fields skipped during normalization. |
+| `info_build_info` | gauge | `/metrics/static` | exporter | `version`, `os`, `arch` | Build metadata; value is always `1`. |
+| `info_device_id` | gauge | `/metrics/static` | registration | `device_uuid`, `machine_uuid`, `user_name`, `device_name`, `os`, `os_version`, `arch` | Emitted only when registration is enabled and a device UUID exists; value is always `1`. |
+| `info_requested_scrape_interval_s` | gauge | `/metrics` | adaptive scheduler | none | Exporter-requested device-level scrape interval. |
+| `info_snapshot_last_update_ts_s` | gauge | `/metrics`, `/metrics/static`, `/fps/debug` | exporter diagnostics | `kind` | Unix timestamp of the last dynamic/static snapshot cache update. |
+| `info_snapshot_age_s` | gauge | `/metrics`, `/metrics/static`, `/fps/debug` | exporter diagnostics | `kind` | Age of the current dynamic/static snapshot cache. Low age with Grafana gaps points away from local collector lag. |
+| `info_snapshot_updates_total` | counter | `/metrics`, `/metrics/static`, `/fps/debug` | exporter diagnostics | `kind` | Total dynamic/static snapshot cache updates. |
+| `info_scrape_requests_total` | counter | `/metrics`, `/metrics/static`, `/fps/debug` | exporter diagnostics | `endpoint`, `status` | Total scrape requests observed by the exporter for metrics endpoints. |
+| `info_scrape_last_request_ts_s` | gauge | `/metrics`, `/metrics/static`, `/fps/debug` | exporter diagnostics | `endpoint` | Unix timestamp of the last scrape request observed for each metrics endpoint. |
+| `info_scrape_gap_s` | gauge | `/metrics`, `/metrics/static`, `/fps/debug` | exporter diagnostics | `endpoint` | Seconds between the two most recent scrape requests for each metrics endpoint. |
+| `info_scrape_gaps_total` | counter | `/metrics`, `/metrics/static`, `/fps/debug` | exporter diagnostics | `endpoint` | Total scrape request gaps above the configured diagnostics threshold. |
+| `info_requested_scrape_interval_changes_total` | counter | `/metrics`, `/metrics/static`, `/fps/debug` | exporter diagnostics | `from`, `to` | Total requested scrape interval transitions between adaptive buckets. |
+| `info_requested_scrape_interval_last_change_ts_s` | gauge | `/metrics`, `/metrics/static`, `/fps/debug` | exporter diagnostics | none | Unix timestamp of the last requested scrape interval transition. |
+| `info_collector_up` | gauge | `/metrics` | all collectors | `collector` | `1` when collector is healthy in the last run, otherwise `0`. |
+| `info_collector_supported` | gauge | `/metrics/static` | all collectors | `collector` | `1` when collector is supported on the host, otherwise `0`. |
+| `info_collector_errors_total` | counter | `/metrics` | all collectors | `collector` | Total collector errors observed by the exporter process. |
+| `info_collector_last_success_ts_s` | gauge | `/metrics` | all collectors | `collector` | Unix timestamp of last successful collector run. |
+| `info_collector_samples` | gauge | `/metrics` | `linux_hwmon`, `macos_macmon` | `collector`, `kind` | Useful sample count from the last collection run; `linux_hwmon` uses `kind="temperature"` and `macos_macmon` uses `kind="dynamic"`. |
+| `info_macmon_snapshot_age_s` | gauge | `/metrics` | `macos_macmon` | none | Age of the latest cached macmon snapshot in seconds. |
+| `info_macmon_reinitializations_total` | counter | `/metrics` | `macos_macmon` | none | Total macmon sampler reinitializations. |
+| `info_macmon_invalid_samples_total` | counter | `/metrics` | `macos_macmon` | `field` | Total macmon fields skipped during normalization. |
 | `game_session_active` | gauge | `/fps` | `steam_deck_fps` | `state_source`, optional `appid`, `title` | `1` when a game session is active. |
 | `game_session_focused` | gauge | `/fps` | `steam_deck_fps` | `state_source`, optional `appid`, `title` | `1` when the active game is focused and visible. |
 | `game_session_info` | gauge | `/fps` | `steam_deck_fps` | `appid`, `title`, `identity_source` | Game identity resolved from local Steam metadata; value is always `1`. |
@@ -88,78 +88,68 @@ default `honor_labels: false`, conflicting scraped labels can be renamed to
 | `game_fps_source_sample_age_s` | gauge | `/fps` | `steam_deck_fps` | `source` | Age of the last accepted frame timing sample. |
 | `game_fps_source_sample_interval_ms` | gauge | `/fps` | `steam_deck_fps` | `source` | Wall-clock interval since the previous accepted frame timing sample. |
 | `game_frame_samples` | gauge | `/fps` | `steam_deck_fps` | `source`, `window`, optional `appid`, `title` | Frame samples in the rolling window. |
-| `game_fps_avg` | gauge | `/fps` | `steam_deck_fps` | `source`, `window`, optional `appid`, `title` | Average FPS in the rolling window. |
-| `game_fps_low_1pct` | gauge | `/fps` | `steam_deck_fps` | `source`, `window`, optional `appid`, `title` | Average FPS across the worst 1% frame times. |
-| `game_fps_low_0_1pct` | gauge | `/fps` | `steam_deck_fps` | `source`, `window`, optional `appid`, `title` | Average FPS across the worst 0.1% frame times. |
-| `game_frame_time_avg_ms` | gauge | `/fps` | `steam_deck_fps` | `source`, `window`, optional `appid`, `title` | Average frame time in milliseconds. |
-| `game_frame_time_min_ms` | gauge | `/fps` | `steam_deck_fps` | `source`, `window`, optional `appid`, `title` | Best frame time in milliseconds. |
-| `game_frame_time_max_ms` | gauge | `/fps` | `steam_deck_fps` | `source`, `window`, optional `appid`, `title` | Worst frame time in milliseconds. |
-| `game_frame_time_p50_ms` | gauge | `/fps` | `steam_deck_fps` | `source`, `window`, optional `appid`, `title` | Median frame time in milliseconds. |
-| `game_frame_time_p95_ms` | gauge | `/fps` | `steam_deck_fps` | `source`, `window`, optional `appid`, `title` | 95th percentile frame time in milliseconds. |
-| `game_frame_time_p99_ms` | gauge | `/fps` | `steam_deck_fps` | `source`, `window`, optional `appid`, `title` | 99th percentile frame time in milliseconds. |
-| `game_frame_jitter_avg_ms` | gauge | `/fps` | `steam_deck_fps` | `source`, `window`, optional `appid`, `title` | Average adjacent-frame delta in milliseconds. |
-| `game_frame_jitter_p95_ms` | gauge | `/fps` | `steam_deck_fps` | `source`, `window`, optional `appid`, `title` | 95th percentile pacing jitter in milliseconds. |
-| `game_frame_jitter_p99_ms` | gauge | `/fps` | `steam_deck_fps` | `source`, `window`, optional `appid`, `title` | 99th percentile pacing jitter in milliseconds. |
-| `game_frame_jitter_max_ms` | gauge | `/fps` | `steam_deck_fps` | `source`, `window`, optional `appid`, `title` | Worst pacing jitter in milliseconds. |
+| `game_fps` | gauge | `/fps` | `steam_deck_fps` | `source`, `window`, `stat`, optional `appid`, `title` | FPS by rolling-window statistic. `stat` is `avg`, `low_1pct`, or `low_0_1pct`. |
+| `game_frame_ms` | gauge | `/fps` | `steam_deck_fps` | `source`, `window`, `stat`, optional `appid`, `title` | Frame time in milliseconds by statistic. `stat` is `avg`, `min`, `max`, `p50`, `p95`, or `p99`. |
+| `game_jitter_ms` | gauge | `/fps` | `steam_deck_fps` | `source`, `window`, `stat`, optional `appid`, `title` | Adjacent frame-time delta in milliseconds by statistic. `stat` is `avg`, `p95`, `p99`, or `max`. |
 | `game_fps_source_backend_info` | gauge | `/fps/debug` | `steam_deck_fps` | `source`, `queue` | Backend-specific FPS source metadata; value is always `1`. |
 | `game_fps_source_sample_payload_bytes` | gauge | `/fps/debug` | `steam_deck_fps` | `source`, `queue` | Payload bytes in the last accepted backend sample when available. |
 | `game_fps_source_output_pixels` | gauge | `/fps/debug` | `steam_deck_fps` | `source`, `queue`, `axis` | Output width/height reported by the backend when available. |
-| `macmon_cpu_temp_celsius` | gauge | `/metrics` | `macos_macmon` | optional `chip` | Average CPU temperature in Celsius from macmon. |
-| `macmon_gpu_temp_celsius` | gauge | `/metrics` | `macos_macmon` | optional `chip` | Average GPU temperature in Celsius from macmon. |
-| `macmon_cpu_power_watts` | gauge | `/metrics` | `macos_macmon` | optional `chip` | CPU power consumption in watts from macmon. |
-| `macmon_gpu_power_watts` | gauge | `/metrics` | `macos_macmon` | optional `chip` | GPU power consumption in watts from macmon. |
-| `macmon_ane_power_watts` | gauge | `/metrics` | `macos_macmon` | optional `chip` | ANE power consumption in watts from macmon. |
-| `macmon_all_power_watts` | gauge | `/metrics` | `macos_macmon` | optional `chip` | Combined SoC power consumption in watts from macmon. |
-| `macmon_sys_power_watts` | gauge | `/metrics` | `macos_macmon` | optional `chip` | System power consumption in watts from macmon. |
-| `macmon_ram_power_watts` | gauge | `/metrics` | `macos_macmon` | optional `chip` | RAM power consumption in watts from macmon. |
-| `macmon_gpu_ram_power_watts` | gauge | `/metrics` | `macos_macmon` | optional `chip` | GPU RAM power consumption in watts from macmon. |
-| `macmon_cpu_usage_ratio` | gauge | `/metrics` | `macos_macmon` | optional `chip` | Combined CPU utilization ratio from macmon. |
-| `macmon_ecpu_usage_ratio` | gauge | `/metrics` | `macos_macmon` | optional `chip` | Efficiency CPU cluster utilization ratio from macmon. |
-| `macmon_pcpu_usage_ratio` | gauge | `/metrics` | `macos_macmon` | optional `chip` | Performance CPU cluster utilization ratio from macmon. |
-| `macmon_gpu_usage_ratio` | gauge | `/metrics` | `macos_macmon` | optional `chip` | GPU utilization ratio from macmon. |
-| `macmon_ecpu_frequency_mhz` | gauge | `/metrics` | `macos_macmon` | optional `chip` | Efficiency CPU cluster frequency in MHz from macmon. |
-| `macmon_pcpu_frequency_mhz` | gauge | `/metrics` | `macos_macmon` | optional `chip` | Performance CPU cluster frequency in MHz from macmon. |
-| `macmon_gpu_frequency_mhz` | gauge | `/metrics` | `macos_macmon` | optional `chip` | GPU frequency in MHz from macmon. |
-| `macmon_memory_ram_used_bytes` | gauge | `/metrics` | `macos_macmon` | optional `chip` | RAM usage in bytes from macmon. |
-| `macmon_memory_ram_total_bytes` | gauge | `/metrics` | `macos_macmon` | optional `chip` | Total RAM in bytes from macmon. |
-| `macmon_memory_swap_used_bytes` | gauge | `/metrics` | `macos_macmon` | optional `chip` | Swap usage in bytes from macmon. |
-| `macmon_memory_swap_total_bytes` | gauge | `/metrics` | `macos_macmon` | optional `chip` | Total swap in bytes from macmon. |
-| `system_uptime_seconds` | gauge | `/metrics` | `system`, `windows_baseline` | `source` | System uptime in seconds. |
-| `system_cpu_count` | gauge | `/metrics/static` | `system` | `source` | Logical CPU count. |
-| `system_cpu_usage_ratio` | gauge | `/metrics` | `system`, `windows_baseline`, `macos_macmon` | `source`, optional `component` | Total system CPU usage ratio from `0` to `1`; collectors may omit it until a reliable delta sample is available. |
-| `system_memory_bytes` | gauge | `/metrics`, `/metrics/static` | `system`, `windows_baseline`, `macos_macmon` | `source`, `state` | Physical memory bytes; `state` is `total`, `available`, or `used`. `total` is static. |
-| `system_swap_bytes` | gauge | `/metrics`, `/metrics/static` | `macos_macmon` | `source`, `state` | Swap bytes; `state` is `total` or `used`. `total` is static. |
-| `system_thermal_state` | gauge | `/metrics` | `macos_thermal_state` | `source`, `state` | macOS thermal pressure state as one-hot gauges for `nominal`, `fair`, `serious`, `critical`, and `unknown`; `source="macos_processinfo"`. |
-| `system_thermal_state_value` | gauge | `/metrics` | `macos_thermal_state` | `source` | macOS thermal pressure numeric state where `unknown=-1`, `nominal=0`, `fair=1`, `serious=2`, and `critical=3`; `source="macos_processinfo"`. |
-| `filesystem_bytes` | gauge | `/metrics`, `/metrics/static` | `windows_baseline` | `source`, `volume`, `drive_type`, `state` | Filesystem bytes; `state` is `size`, `free`, or `available`. `size` is static. |
-| `network_bytes_total` | counter | `/metrics` | `windows_baseline` | `source`, `if_index`, `interface`, `direction` | Total network bytes; `direction` is `receive` or `transmit`. |
-| `system_os_info` | gauge | `/metrics/static` | `windows_inventory` | `source`, `os`, optional `version`, `build`, optional `arch` | OS identity; value is always `1`. |
-| `hardware_cpu_info` | gauge | `/metrics/static` | `windows_inventory` | `source`, `model`, `architecture`, `logical_processors` | CPU identity and topology information; value is always `1`. |
-| `system_computer_info` | gauge | `/metrics/static` | `windows_inventory` | `source`, `computer_name`, `arch` | Windows computer identity information; value is always `1`. |
-| `hardware_hwmon_chips_discovered` | gauge | `/metrics` | `linux_hwmon` | `collector` | Number of Linux hwmon chip directories discovered. |
-| `hardware_hwmon_temperature_inputs_discovered` | gauge | `/metrics` | `linux_hwmon` | `collector` | Number of Linux hwmon `temp*_input` files discovered before filtering. |
-| `hardware_temperature_celsius` | gauge | `/metrics` | `linux_hwmon`, `linux_amdgpu`, `linux_drm`, `nvidia_nvml`, `windows_lhm_http`, `windows_lhm_wmi`, `macos_macmon` | `component`, `sensor`, `source`, optional `device_id`, optional `sensor_instance`, optional `source_driver`, optional source-specific labels | Dynamic hardware temperatures. Linux hwmon and Windows LHM use canonical sensor names such as `cpu_package_temp`, `cpu_core_temp`, `nvme_composite_temp`, `gpu_edge_temp`, and `vrm_temp`. `macos_macmon` emits average CPU/GPU temperatures with `source="macmon"`. |
-| `hardware_temperature_limit_celsius` | gauge | `/metrics/static` | `linux_hwmon` | `component`, `device_id`, `sensor`, `sensor_instance`, `source`, `source_driver`, `limit`, optional storage labels | Static-ish warning/critical temperature thresholds where available. |
-| `hardware_sensor_info` | gauge | `/metrics/static` | `linux_hwmon`, `windows_lhm_http` | `component`, `device_id`, `sensor`, `sensor_instance`, `source`, `source_driver`, `raw_label`, `raw_channel`, `confidence` | Raw sensor mapping metadata; value is always `1`. Kept out of dynamic temperature labels to reduce churn. |
-| `hardware_device_info` | gauge | `/metrics/static` | `linux_hwmon`, `linux_power_supply`, `linux_amdgpu`, `linux_drm`, `nvidia_nvml`, `macos_macmon` | `component`, `source`, optional `device_id`, optional `source_driver`, source-specific identity labels | Hardware identity information for GPUs, NVMe storage, and Apple Silicon SoC identity; value is always `1`. Serial numbers are not exposed as Prometheus labels. |
-| `hardware_cpu_cluster_cores` | gauge | `/metrics/static` | `macos_macmon` | `cluster`, `source` | Apple Silicon CPU core count by efficiency/performance cluster. |
-| `hardware_gpu_cores` | gauge | `/metrics/static` | `macos_macmon` | `gpu_index`, `source` | Apple Silicon GPU core count. |
-| `hardware_clock_available_hertz` | gauge | `/metrics/static` | `macos_macmon` | `component`, `state`, `source`, optional `cluster`, optional `gpu_index` | Available Apple Silicon CPU/GPU clock states converted from MHz to hertz. |
-| `hardware_storage_capacity_bytes` | gauge | `/metrics/static` | `linux_hwmon` | `component`, `device_id`, `source`, `source_driver`, `storage_id`, `namespace` | Linux NVMe namespace capacity in bytes from sysfs block-sector counts. |
-| `hardware_voltage_volts` | gauge | `/metrics` | `linux_drm`, `windows_lhm_http` | `component`, `device_id`, `sensor`, `sensor_instance`, `source`, `source_driver` | Voltage readings from Linux DRM hwmon and LibreHardwareMonitor HTTP. |
-| `hardware_current_amperes` | gauge | `/metrics` | `windows_lhm_http` | `component`, `device_id`, `sensor`, `sensor_instance`, `source`, `source_driver` | Current readings from LibreHardwareMonitor HTTP. |
-| `hardware_battery_charge_ratio` | gauge | `/metrics` | `linux_power_supply` | `battery`, `source` | Battery charge as a ratio from `0` to `1`; uses `charge_now/charge_full` when available and falls back to `capacity`. |
-| `hardware_battery_voltage_volts` | gauge | `/metrics` | `linux_power_supply` | `battery`, `source` | Battery voltage converted from microvolts to volts. |
-| `hardware_battery_current_amperes` | gauge | `/metrics` | `linux_power_supply` | `battery`, `source` | Battery current converted from microamps to amperes. |
-| `hardware_battery_power_watts` | gauge | `/metrics` | `linux_power_supply` | `battery`, `direction`, `derived`, `source` | Battery power in watts; `derived="true"` means volts multiplied by amps because `power_now` was absent. |
-| `hardware_power_watts` | gauge | `/metrics` | `linux_amdgpu`, `linux_drm`, `nvidia_nvml`, `windows_lhm_http`, `macos_macmon` | `component`, `source`, optional `device_id`, `sensor`, `sensor_instance`, `source_driver`, `gpu_index` | Current hardware power usage in watts. `macos_macmon` emits CPU, GPU, ANE, SoC, system, RAM, and GPU RAM power when available. |
-| `hardware_power_limit_watts` | gauge | `/metrics/static` | `linux_drm`, `nvidia_nvml`, `windows_lhm_http` | `component`, `device_id`, `sensor`, `source`, `source_driver`, `limit`, optional `gpu_index` | Static-ish enforced/current power limit in watts. |
-| `hardware_clock_hertz` | gauge | `/metrics` | `linux_amdgpu`, `linux_drm`, `nvidia_nvml`, `windows_lhm_http`, `macos_macmon` | `component`, `source`, optional `device_id`, `sensor`, `clock`, `unit`, `cluster`, `source_driver`, `gpu_index` | Hardware clock speed in hertz. `macos_macmon` converts CPU/GPU MHz values to hertz. |
-| `hardware_utilization_ratio` | gauge | `/metrics` | `linux_amdgpu`, `linux_drm`, `nvidia_nvml`, `windows_lhm_http`, `macos_macmon` | `component`, `source`, optional `device_id`, `sensor`, `engine`, `unit`, `cluster`, `source_driver`, `gpu_index` | Utilization ratio from `0` to `1`. |
-| `hardware_memory_bytes` | gauge | `/metrics`, `/metrics/static` | `linux_amdgpu`, `linux_drm`, `nvidia_nvml`, `windows_lhm_http` | `component`, `device_id`, `memory`, `state`, `source`, `source_driver`, optional `gpu_index` | Hardware memory bytes; GPU VRAM uses `memory="vram"` and `state` values `total`, `used`, and `free`. |
-| `hardware_fan_speed_ratio` | gauge | `/metrics` | `nvidia_nvml`, `windows_lhm_http` | `component`, `device_id`, `sensor`, `sensor_instance`, `source`, `source_driver`, optional `gpu_index` | Fan speed as a ratio from `0` to `1` where available. |
-| `hardware_fan_speed_rpm` | gauge | `/metrics` | `linux_hwmon`, `linux_drm`, `windows_lhm_http` | `component`, `device_id`, `sensor`, `sensor_instance`, `source`, `source_driver` | Fan or pump speed in RPM; `0` can be a valid stopped reading. |
-| `hardware_state` | gauge | `/metrics` | `linux_amdgpu`, `linux_drm`, `nvidia_nvml` | `component`, `device_id`, `sensor`, `state`, `source`, `source_driver`, `gpu_index` | Numeric hardware state values such as NVIDIA P-state, GPU throttle reason flags, and Linux DRM throttle states. |
+| `hw_macmon_cpu_temp_c` | gauge | `/metrics` | `macos_macmon` | optional `chip` | Average CPU temperature in Celsius from macmon. |
+| `hw_macmon_gpu_temp_c` | gauge | `/metrics` | `macos_macmon` | optional `chip` | Average GPU temperature in Celsius from macmon. |
+| `hw_macmon_cpu_power_w` | gauge | `/metrics` | `macos_macmon` | optional `chip` | CPU power consumption in watts from macmon. |
+| `hw_macmon_gpu_power_w` | gauge | `/metrics` | `macos_macmon` | optional `chip` | GPU power consumption in watts from macmon. |
+| `hw_macmon_ane_power_w` | gauge | `/metrics` | `macos_macmon` | optional `chip` | ANE power consumption in watts from macmon. |
+| `hw_macmon_soc_power_w` | gauge | `/metrics` | `macos_macmon` | optional `chip` | Combined SoC power consumption in watts from macmon. |
+| `hw_macmon_system_power_w` | gauge | `/metrics` | `macos_macmon` | optional `chip` | System power consumption in watts from macmon. |
+| `hw_macmon_ram_power_w` | gauge | `/metrics` | `macos_macmon` | optional `chip` | RAM power consumption in watts from macmon. |
+| `hw_macmon_gpu_ram_power_w` | gauge | `/metrics` | `macos_macmon` | optional `chip` | GPU RAM power consumption in watts from macmon. |
+| `sys_macmon_cpu_usage_ratio` | gauge | `/metrics` | `macos_macmon` | optional `chip` | Combined CPU utilization ratio from macmon. |
+| `hw_macmon_ecpu_usage_ratio` | gauge | `/metrics` | `macos_macmon` | optional `chip` | Efficiency CPU cluster utilization ratio from macmon. |
+| `hw_macmon_pcpu_usage_ratio` | gauge | `/metrics` | `macos_macmon` | optional `chip` | Performance CPU cluster utilization ratio from macmon. |
+| `hw_macmon_gpu_usage_ratio` | gauge | `/metrics` | `macos_macmon` | optional `chip` | GPU utilization ratio from macmon. |
+| `hw_macmon_ecpu_freq_mhz` | gauge | `/metrics` | `macos_macmon` | optional `chip` | Efficiency CPU cluster frequency in MHz from macmon. |
+| `hw_macmon_pcpu_freq_mhz` | gauge | `/metrics` | `macos_macmon` | optional `chip` | Performance CPU cluster frequency in MHz from macmon. |
+| `hw_macmon_gpu_freq_mhz` | gauge | `/metrics` | `macos_macmon` | optional `chip` | GPU frequency in MHz from macmon. |
+| `sys_macmon_ram_used_mb` | gauge | `/metrics` | `macos_macmon` | optional `chip` | RAM usage in decimal MB from macmon. |
+| `sys_macmon_ram_total_mb` | gauge | `/metrics` | `macos_macmon` | optional `chip` | Total RAM in decimal MB from macmon. |
+| `sys_macmon_swap_used_mb` | gauge | `/metrics` | `macos_macmon` | optional `chip` | Swap usage in decimal MB from macmon. |
+| `sys_macmon_swap_total_mb` | gauge | `/metrics` | `macos_macmon` | optional `chip` | Total swap in decimal MB from macmon. |
+| `sys_uptime_s` | gauge | `/metrics` | `system`, `windows_baseline` | `source` | System uptime in seconds. |
+| `sys_cpu_count` | gauge | `/metrics/static` | `system` | `source` | Logical CPU count. |
+| `sys_cpu_usage_ratio` | gauge | `/metrics` | `system`, `windows_baseline`, `macos_macmon` | `source`, optional `component` | Total system CPU usage ratio from `0` to `1`; collectors may omit it until a reliable delta sample is available. |
+| `sys_mem_mb` | gauge | `/metrics`, `/metrics/static` | `system`, `windows_baseline`, `macos_macmon` | `source`, `kind`, `state` | Physical memory in decimal MB; `state` is `total`, `available`, or `used`. `total` is static. |
+| `sys_mem_mb` | gauge | `/metrics`, `/metrics/static` | `macos_macmon` | `source`, `state` | Swap in decimal MB; `state` is `total` or `used`. `total` is static. |
+| `sys_thermal_state` | gauge | `/metrics` | `macos_thermal_state` | `source`, `state` | macOS thermal pressure state as one-hot gauges for `nominal`, `fair`, `serious`, `critical`, and `unknown`; `source="macos_processinfo"`. |
+| `sys_thermal_state_value` | gauge | `/metrics` | `macos_thermal_state` | `source` | macOS thermal pressure numeric state where `unknown=-1`, `nominal=0`, `fair=1`, `serious=2`, and `critical=3`; `source="macos_processinfo"`. |
+| `sys_fs_space_mb` | gauge | `/metrics`, `/metrics/static` | `windows_baseline` | `source`, `volume`, `drive_type`, `state` | Filesystem space in decimal MB; `state` is `size`, `free`, or `available`. `size` is static. |
+| `net_bytes_total` | counter | `/metrics` | `windows_baseline` | `source`, `if_index`, `interface`, `direction` | Total network bytes; `direction` is `receive` or `transmit`. |
+| `sys_os_info` | gauge | `/metrics/static` | `windows_inventory` | `source`, `os`, optional `version`, `build`, optional `arch` | OS identity; value is always `1`. |
+| `sys_cpu_info` | gauge | `/metrics/static` | `windows_inventory` | `source`, `model`, `architecture`, `logical_processors` | CPU identity and topology information; value is always `1`. |
+| `sys_computer_info` | gauge | `/metrics/static` | `windows_inventory` | `source`, `computer_name`, `arch` | Windows computer identity information; value is always `1`. |
+| `info_hwmon_chips_discovered` | gauge | `/metrics` | `linux_hwmon` | `collector` | Number of Linux hwmon chip directories discovered. |
+| `info_hwmon_temp_inputs_discovered` | gauge | `/metrics` | `linux_hwmon` | `collector` | Number of Linux hwmon `temp*_input` files discovered before filtering. |
+| `hw_temp_c` | gauge | `/metrics` | `linux_hwmon`, `linux_amdgpu`, `linux_drm`, `nvidia_nvml`, `windows_lhm_http`, `windows_lhm_wmi`, `macos_macmon` | `component`, `sensor`, `source`, optional `device_id`, optional `sensor_instance`, optional `source_driver`, optional source-specific labels | Dynamic hardware temperatures. Linux hwmon and Windows LHM use canonical sensor names such as `cpu_package_temp`, `cpu_core_temp`, `nvme_composite_temp`, `gpu_edge_temp`, and `vrm_temp`. `macos_macmon` emits average CPU/GPU temperatures with `source="macmon"`. |
+| `hw_temp_limit_c` | gauge | `/metrics/static` | `linux_hwmon` | `component`, `device_id`, `sensor`, `sensor_instance`, `source`, `source_driver`, `limit`, optional storage labels | Static-ish warning/critical temperature thresholds where available. |
+| `hw_sensor_info` | gauge | `/metrics/static` | `linux_hwmon`, `windows_lhm_http` | `component`, `device_id`, `sensor`, `sensor_instance`, `source`, `source_driver`, `raw_label`, `raw_channel`, `confidence` | Raw sensor mapping metadata; value is always `1`. Kept out of dynamic temperature labels to reduce churn. |
+| `hw_device_info` | gauge | `/metrics/static` | `linux_hwmon`, `linux_power_supply`, `linux_amdgpu`, `linux_drm`, `nvidia_nvml`, `macos_macmon` | `component`, `source`, optional `device_id`, optional `source_driver`, source-specific identity labels | Hardware identity information for GPUs, NVMe storage, and Apple Silicon SoC identity; value is always `1`. Serial numbers are not exposed as Prometheus labels. |
+| `hw_cpu_cluster_cores` | gauge | `/metrics/static` | `macos_macmon` | `cluster`, `source` | Apple Silicon CPU core count by efficiency/performance cluster. |
+| `hw_gpu_cores` | gauge | `/metrics/static` | `macos_macmon` | `gpu_index`, `source` | Apple Silicon GPU core count. |
+| `hw_freq_available_mhz` | gauge | `/metrics/static` | `macos_macmon` | `component`, `state`, `source`, optional `cluster`, optional `gpu_index` | Available Apple Silicon CPU/GPU clock states converted from MHz to hertz. |
+| `storage_capacity_mb` | gauge | `/metrics/static` | `linux_hwmon` | `component`, `device_id`, `source`, `source_driver`, `storage_id`, `namespace` | Linux NVMe namespace capacity in decimal MB from sysfs block-sector counts. |
+| `hw_voltage_v` | gauge | `/metrics` | `linux_drm`, `windows_lhm_http` | `component`, `device_id`, `sensor`, `sensor_instance`, `source`, `source_driver` | Voltage readings from Linux DRM hwmon and LibreHardwareMonitor HTTP. |
+| `hw_current_a` | gauge | `/metrics` | `windows_lhm_http` | `component`, `device_id`, `sensor`, `sensor_instance`, `source`, `source_driver` | Current readings from LibreHardwareMonitor HTTP. |
+| `batt_charge_ratio` | gauge | `/metrics` | `linux_power_supply` | `battery`, `source` | Battery charge as a ratio from `0` to `1`; uses `charge_now/charge_full` when available and falls back to `capacity`. |
+| `batt_voltage_v` | gauge | `/metrics` | `linux_power_supply` | `battery`, `source` | Battery voltage converted from microvolts to volts. |
+| `batt_current_a` | gauge | `/metrics` | `linux_power_supply` | `battery`, `source` | Battery current converted from microamps to amperes. |
+| `batt_power_w` | gauge | `/metrics` | `linux_power_supply` | `battery`, `direction`, `derived`, `source` | Battery power in watts; `derived="true"` means volts multiplied by amps because `power_now` was absent. |
+| `hw_power_w` | gauge | `/metrics` | `linux_amdgpu`, `linux_drm`, `nvidia_nvml`, `windows_lhm_http`, `macos_macmon` | `component`, `source`, optional `device_id`, `sensor`, `sensor_instance`, `source_driver`, `gpu_index` | Current hardware power usage in watts. `macos_macmon` emits CPU, GPU, ANE, SoC, system, RAM, and GPU RAM power when available. |
+| `hw_power_limit_w` | gauge | `/metrics/static` | `linux_drm`, `nvidia_nvml`, `windows_lhm_http` | `component`, `device_id`, `sensor`, `source`, `source_driver`, `limit`, optional `gpu_index` | Static-ish enforced/current power limit in watts. |
+| `hw_freq_mhz` | gauge | `/metrics` | `linux_amdgpu`, `linux_drm`, `nvidia_nvml`, `windows_lhm_http`, `macos_macmon` | `component`, `source`, optional `device_id`, `sensor`, `clock`, `unit`, `cluster`, `source_driver`, `gpu_index` | Hardware frequency in decimal MHz. `macos_macmon` converts CPU/GPU MHz values to hertz. |
+| `hw_util_ratio` | gauge | `/metrics` | `linux_amdgpu`, `linux_drm`, `nvidia_nvml`, `windows_lhm_http`, `macos_macmon` | `component`, `source`, optional `device_id`, `sensor`, `engine`, `unit`, `cluster`, `source_driver`, `gpu_index` | Utilization ratio from `0` to `1`. |
+| `hw_mem_mb` | gauge | `/metrics`, `/metrics/static` | `linux_amdgpu`, `linux_drm`, `nvidia_nvml`, `windows_lhm_http` | `component`, `device_id`, `memory`, `state`, `source`, `source_driver`, optional `gpu_index` | Hardware memory in decimal MB; GPU VRAM uses `memory="vram"` and `state` values `total`, `used`, and `free`. |
+| `hw_fan_ratio` | gauge | `/metrics` | `nvidia_nvml`, `windows_lhm_http` | `component`, `device_id`, `sensor`, `sensor_instance`, `source`, `source_driver`, optional `gpu_index` | Fan speed as a ratio from `0` to `1` where available. |
+| `hw_fan_rpm` | gauge | `/metrics` | `linux_hwmon`, `linux_drm`, `windows_lhm_http` | `component`, `device_id`, `sensor`, `sensor_instance`, `source`, `source_driver` | Fan or pump speed in RPM; `0` can be a valid stopped reading. |
+| `hw_state` | gauge | `/metrics` | `linux_amdgpu`, `linux_drm`, `nvidia_nvml` | `component`, `device_id`, `sensor`, `state`, `source`, `source_driver`, `gpu_index` | Numeric hardware state values such as NVIDIA P-state, GPU throttle reason flags, and Linux DRM throttle states. |
 
 ## Current Cardinality Notes
 
@@ -167,9 +157,9 @@ default `honor_labels: false`, conflicting scraped labels can be renamed to
 - Hardware metric families use `component`, `device_id`, `sensor`, and
   `sensor_instance` as the common shape. Source-specific labels such as `gpu_index`,
   `storage_id`, `pci_bdf`, and `storage_model` are additive.
-- `hardware_sensor_info` carries raw sensor names, raw channels, and mapping
+- `hw_sensor_info` carries raw sensor names, raw channels, and mapping
   confidence so dynamic metrics do not need those high-cardinality labels.
-- `hardware_device_info{name=...}` for NVIDIA GPUs is enabled by default; GPU
+- `hw_device_info{name=...}` for NVIDIA GPUs is enabled by default; GPU
   UUID labels are opt-in through `collectors.nvidia_nvml.expose_gpu_uuid`.
 - NVMe model labels are enabled by default through
   `collectors.linux_hwmon.expose_storage_model`; NVMe serial numbers stay
@@ -185,7 +175,7 @@ default `honor_labels: false`, conflicting scraped labels can be renamed to
   background sampler thread and does not run a sidecar metrics server. It also
   exposes `/json` with a valid JSON snapshot shaped like macmon's native model.
 - Windows network interface labels use interface aliases and indexes. Use `collectors.windows_baseline.network_interface_allowlist` or `network_interface_denylist` if a host exposes noisy virtual adapters.
-- `device_info` and `exporter_build_info` can overlap with registry target
+- `info_device_id` and `info_build_info` can overlap with registry target
   labels. Prefer registry labels for dashboard filters.
 - Steam Deck telemetry uses `linux_power_supply` for battery metrics and `linux_amdgpu` for AMD GPU utilization, clocks, VRAM/GTT memory, and APU `gpu_metrics` CPU temperature/power when the binary table is readable. Gamescope game-state detection only changes the requested scrape interval; it does not add per-game labels.
 - Long-term storage optimization should be handled later through downsampling

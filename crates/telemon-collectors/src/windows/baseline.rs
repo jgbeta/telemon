@@ -203,23 +203,28 @@ fn memory_metrics(memory: MemoryStatus) -> Vec<MetricSample> {
     vec![
         MetricSample::gauge(
             names::MEMORY_TOTAL_BYTES,
-            "Physical memory in bytes by state.",
-            labels(&[("source", SOURCE), ("state", "total")]),
-            memory.total_bytes as f64,
+            "Physical memory in decimal megabytes by kind and state.",
+            labels(&[("source", SOURCE), ("kind", "ram"), ("state", "total")]),
+            bytes_to_mb(memory.total_bytes),
         ),
         MetricSample::gauge(
             names::MEMORY_AVAILABLE_BYTES,
-            "Physical memory in bytes by state.",
-            labels(&[("source", SOURCE), ("state", "available")]),
-            memory.available_bytes as f64,
+            "Physical memory in decimal megabytes by kind and state.",
+            labels(&[("source", SOURCE), ("kind", "ram"), ("state", "available")]),
+            bytes_to_mb(memory.available_bytes),
         ),
         MetricSample::gauge(
             names::MEMORY_USED_BYTES,
-            "Physical memory in bytes by state.",
-            labels(&[("source", SOURCE), ("state", "used")]),
-            used as f64,
+            "Physical memory in decimal megabytes by kind and state.",
+            labels(&[("source", SOURCE), ("kind", "ram"), ("state", "used")]),
+            bytes_to_mb(used),
         ),
     ]
+}
+
+#[cfg(any(target_os = "windows", test))]
+fn bytes_to_mb(value: u64) -> f64 {
+    value as f64 / 1_000_000.0
 }
 
 #[cfg(target_os = "windows")]
@@ -272,9 +277,9 @@ fn filesystem_bytes_metric(
     metric_labels.insert("state".to_string(), state.to_string());
     MetricSample::gauge(
         name,
-        "Filesystem bytes by state.",
+        "Filesystem space in decimal megabytes by state.",
         metric_labels,
-        value as f64,
+        bytes_to_mb(value),
     )
 }
 
@@ -589,15 +594,15 @@ mod tests {
     #[cfg(any(target_os = "windows", test))]
     fn memory_metrics_emit_total_available_and_used_bytes() {
         let metrics = memory_metrics(MemoryStatus {
-            total_bytes: 16,
-            available_bytes: 6,
+            total_bytes: 16_000_000,
+            available_bytes: 6_000_000,
         });
 
         assert_eq!(
             metric_value(
                 &metrics,
                 names::MEMORY_TOTAL_BYTES,
-                &[("source", SOURCE), ("state", "total")]
+                &[("source", SOURCE), ("kind", "ram"), ("state", "total")]
             ),
             Some(16.0)
         );
@@ -605,7 +610,7 @@ mod tests {
             metric_value(
                 &metrics,
                 names::MEMORY_AVAILABLE_BYTES,
-                &[("source", SOURCE), ("state", "available")]
+                &[("source", SOURCE), ("kind", "ram"), ("state", "available")]
             ),
             Some(6.0)
         );
@@ -613,7 +618,7 @@ mod tests {
             metric_value(
                 &metrics,
                 names::MEMORY_USED_BYTES,
-                &[("source", SOURCE), ("state", "used")]
+                &[("source", SOURCE), ("kind", "ram"), ("state", "used")]
             ),
             Some(10.0)
         );

@@ -83,7 +83,7 @@ mod tests {
     #[test]
     fn stores_and_replaces_snapshot() {
         let mut cache = MetricCache::new();
-        let sample = MetricSample::gauge("exporter_test", "Test.", labels(&[]), 1.0);
+        let sample = MetricSample::gauge("info_test", "Test.", labels(&[]), 1.0);
 
         assert!(!cache.has_snapshot());
         cache.replace_snapshot(vec![sample.clone()]);

@@ -629,16 +629,13 @@ fn push_clock_mhz(
     sensor: &str,
     clock: &str,
 ) {
-    if let Some(value) = read_f64(&path)
-        .map(|mhz| mhz * 1_000_000.0)
-        .filter(|value| value.is_finite() && *value >= 0.0)
-    {
+    if let Some(value) = read_f64(&path).filter(|value| value.is_finite() && *value >= 0.0) {
         let mut metric_labels = base.clone();
         metric_labels.insert("sensor".to_string(), sensor.to_string());
         metric_labels.insert("clock".to_string(), clock.to_string());
         metrics.push(MetricSample::gauge(
             names::HARDWARE_CLOCK_HERTZ,
-            "Hardware clock speed in hertz.",
+            "Hardware frequency in decimal megahertz.",
             metric_labels,
             value,
         ));
@@ -814,9 +811,9 @@ fn fdinfo_metrics(
         metric_labels.insert("state".to_string(), "used".to_string());
         metrics.push(MetricSample::gauge(
             names::HARDWARE_MEMORY_BYTES,
-            "Hardware memory bytes by state.",
+            "Hardware memory in decimal megabytes by state.",
             metric_labels,
-            bytes as f64,
+            bytes as f64 / 1_000_000.0,
         ));
     }
 
@@ -944,9 +941,10 @@ mod tests {
                 && metric.labels.get("sensor").map(String::as_str) == Some("gpu_edge_temp")
                 && (metric.value - 42.0).abs() < 0.001
         }));
-        assert!(result.metrics.iter().any(|metric| {
-            metric.name == names::HARDWARE_CLOCK_HERTZ && metric.value == 900_000_000.0
-        }));
+        assert!(result
+            .metrics
+            .iter()
+            .any(|metric| { metric.name == names::HARDWARE_CLOCK_HERTZ && metric.value == 900.0 }));
 
         fs::remove_dir_all(root).unwrap();
     }

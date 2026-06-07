@@ -625,9 +625,9 @@ fn snapshot_to_dynamic_metrics(
     if let Some(value) = snapshot.efficiency_cpu_clock_hertz {
         metrics.push(cpu_cluster_metric(
             names::HARDWARE_CLOCK_HERTZ,
-            "Hardware clock speed in hertz.",
+            "Hardware frequency in decimal megahertz.",
             "efficiency",
-            value,
+            hertz_to_mhz(value),
         ));
         metrics.push(macmon_metric(
             names::MACMON_ECPU_FREQUENCY_MHZ,
@@ -639,9 +639,9 @@ fn snapshot_to_dynamic_metrics(
     if let Some(value) = snapshot.performance_cpu_clock_hertz {
         metrics.push(cpu_cluster_metric(
             names::HARDWARE_CLOCK_HERTZ,
-            "Hardware clock speed in hertz.",
+            "Hardware frequency in decimal megahertz.",
             "performance",
-            value,
+            hertz_to_mhz(value),
         ));
         metrics.push(macmon_metric(
             names::MACMON_PCPU_FREQUENCY_MHZ,
@@ -672,14 +672,14 @@ fn snapshot_to_dynamic_metrics(
     if let Some(value) = snapshot.gpu_clock_hertz {
         metrics.push(MetricSample::gauge(
             names::HARDWARE_CLOCK_HERTZ,
-            "Hardware clock speed in hertz.",
+            "Hardware frequency in decimal megahertz.",
             labels(&[
                 ("component", "gpu"),
                 ("gpu_index", "0"),
                 ("clock", "graphics"),
                 ("source", SOURCE),
             ]),
-            value,
+            hertz_to_mhz(value),
         ));
         metrics.push(macmon_metric(
             names::MACMON_GPU_FREQUENCY_MHZ,
@@ -759,36 +759,36 @@ fn snapshot_to_dynamic_metrics(
         metrics.push(memory_metric("used", value));
         metrics.push(macmon_metric(
             names::MACMON_MEMORY_RAM_USED_BYTES,
-            "RAM usage in bytes from macmon.",
+            "RAM usage in decimal megabytes from macmon.",
             chip,
-            value as f64,
+            bytes_to_mb(value),
         ));
     }
     if let Some(value) = snapshot.memory_total_bytes {
         metrics.push(memory_metric("total", value));
         metrics.push(macmon_metric(
             names::MACMON_MEMORY_RAM_TOTAL_BYTES,
-            "Total RAM in bytes from macmon.",
+            "Total RAM in decimal megabytes from macmon.",
             chip,
-            value as f64,
+            bytes_to_mb(value),
         ));
     }
     if let Some(value) = snapshot.swap_used_bytes {
         metrics.push(swap_metric("used", value));
         metrics.push(macmon_metric(
             names::MACMON_MEMORY_SWAP_USED_BYTES,
-            "Swap usage in bytes from macmon.",
+            "Swap usage in decimal megabytes from macmon.",
             chip,
-            value as f64,
+            bytes_to_mb(value),
         ));
     }
     if let Some(value) = snapshot.swap_total_bytes {
         metrics.push(swap_metric("total", value));
         metrics.push(macmon_metric(
             names::MACMON_MEMORY_SWAP_TOTAL_BYTES,
-            "Total swap in bytes from macmon.",
+            "Total swap in decimal megabytes from macmon.",
             chip,
-            value as f64,
+            bytes_to_mb(value),
         ));
     }
 
@@ -808,6 +808,10 @@ fn macmon_labels(chip: Option<&str>) -> std::collections::BTreeMap<String, Strin
 
 fn hertz_to_mhz(value: f64) -> f64 {
     value / 1_000_000.0
+}
+
+fn bytes_to_mb(value: u64) -> f64 {
+    value as f64 / 1_000_000.0
 }
 
 fn cpu_cluster_metric(name: &str, help: &str, cluster: &str, value: f64) -> MetricSample {
@@ -849,18 +853,18 @@ fn power_metric(component: &str, value: f64) -> MetricSample {
 fn memory_metric(state: &str, value: u64) -> MetricSample {
     MetricSample::gauge(
         names::MEMORY_TOTAL_BYTES,
-        "System memory bytes by state.",
-        labels(&[("state", state), ("source", SOURCE)]),
-        value as f64,
+        "System memory in decimal megabytes by kind and state.",
+        labels(&[("kind", "ram"), ("state", state), ("source", SOURCE)]),
+        bytes_to_mb(value),
     )
 }
 
 fn swap_metric(state: &str, value: u64) -> MetricSample {
     MetricSample::gauge(
         names::SYSTEM_SWAP_BYTES,
-        "System swap bytes by state.",
-        labels(&[("state", state), ("source", SOURCE)]),
-        value as f64,
+        "System memory in decimal megabytes by kind and state.",
+        labels(&[("kind", "swap"), ("state", state), ("source", SOURCE)]),
+        bytes_to_mb(value),
     )
 }
 
@@ -945,7 +949,6 @@ fn available_clock_metrics(
         }
 
         let state = index.to_string();
-        let hertz = u64::from(*frequency_mhz) * 1_000_000;
         let mut metric_labels = labels(&[
             ("component", component),
             ("state", state.as_str()),
@@ -960,9 +963,9 @@ fn available_clock_metrics(
 
         metrics.push(MetricSample::gauge(
             names::HARDWARE_CLOCK_AVAILABLE_HERTZ,
-            "Available Apple Silicon hardware clock speed in hertz.",
+            "Available Apple Silicon hardware frequency in decimal megahertz.",
             metric_labels,
-            hertz as f64,
+            f64::from(*frequency_mhz),
         ));
     }
 
@@ -1202,7 +1205,7 @@ mod tests {
         assert!(metric_value(
             &metrics,
             names::MEMORY_USED_BYTES,
-            &[("state", "used"), ("source", SOURCE)]
+            &[("kind", "swap"), ("state", "used"), ("source", SOURCE)]
         )
         .is_none());
     }
@@ -1226,10 +1229,10 @@ mod tests {
             system_power_watts: Some(18.0),
             ram_power_watts: Some(1.1),
             gpu_ram_power_watts: Some(0.2),
-            memory_total_bytes: Some(16),
-            memory_used_bytes: Some(6),
-            swap_total_bytes: Some(8),
-            swap_used_bytes: Some(2),
+            memory_total_bytes: Some(16_000_000),
+            memory_used_bytes: Some(6_000_000),
+            swap_total_bytes: Some(8_000_000),
+            swap_used_bytes: Some(2_000_000),
         };
         let info = MacmonStaticInfo {
             chip_name: "Apple M3 Pro".to_string(),
@@ -1277,7 +1280,7 @@ mod tests {
             metric_value(
                 &metrics,
                 names::SYSTEM_SWAP_BYTES,
-                &[("state", "used"), ("source", SOURCE)]
+                &[("kind", "swap"), ("state", "used"), ("source", SOURCE)]
             ),
             Some(2.0)
         );
@@ -1324,7 +1327,7 @@ mod tests {
                     ("state", "1")
                 ]
             ),
-            Some(1_536_000_000.0)
+            Some(1_536.0)
         );
     }
 

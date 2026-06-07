@@ -572,10 +572,14 @@ fn memory_metric(base: &[(&str, &str)], memory: &str, state: &str, value: u64) -
     metric_labels.insert("state".to_string(), state.to_string());
     MetricSample::gauge(
         names::HARDWARE_MEMORY_BYTES,
-        "Hardware memory bytes by state.",
+        "Hardware memory in decimal megabytes by state.",
         metric_labels,
-        value as f64,
+        bytes_to_mb(value),
     )
+}
+
+fn bytes_to_mb(value: u64) -> f64 {
+    value as f64 / 1_000_000.0
 }
 
 fn clock_metric(base: &[(&str, &str)], sensor: &str, clock: &str, value: f64) -> MetricSample {
@@ -584,9 +588,9 @@ fn clock_metric(base: &[(&str, &str)], sensor: &str, clock: &str, value: f64) ->
     metric_labels.insert("clock".to_string(), clock.to_string());
     MetricSample::gauge(
         names::HARDWARE_CLOCK_HERTZ,
-        "Hardware clock speed in hertz.",
+        "Hardware frequency in decimal megahertz.",
         metric_labels,
-        value,
+        value / 1_000_000.0,
     )
 }
 
@@ -863,8 +867,8 @@ mod tests {
         write(&device.join("vendor"), "0x1002\n");
         write(&device.join("device"), "0x1435\n");
         write(&device.join("gpu_busy_percent"), "32\n");
-        write(&device.join("mem_info_vram_total"), "1000\n");
-        write(&device.join("mem_info_vram_used"), "700\n");
+        write(&device.join("mem_info_vram_total"), "1000000000\n");
+        write(&device.join("mem_info_vram_used"), "700000000\n");
         write(&device.join("mem_info_gtt_total"), "2000\n");
         write(&device.join("mem_info_gtt_used"), "500\n");
         write(&device.join("pp_dpm_sclk"), "0: 200Mhz *\n1: 1100Mhz\n");
@@ -891,7 +895,7 @@ mod tests {
         assert!(result.metrics.iter().any(|metric| {
             metric.name == names::HARDWARE_CLOCK_HERTZ
                 && metric.labels.get("clock").map(String::as_str) == Some("graphics")
-                && metric.value == 200_000_000.0
+                && metric.value == 200.0
         }));
         assert!(result.metrics.iter().any(|metric| {
             metric.name == names::TEMPERATURE_CELSIUS

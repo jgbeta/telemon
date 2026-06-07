@@ -1,90 +1,96 @@
 kind,metric,type,endpoint,source,labels,notes
-metric,exporter_build_info,gauge,/metrics/static,exporter,version;os;arch,Build metadata; value is always 1.
-metric,device_info,gauge,/metrics/static,registration,device_uuid;machine_uuid;user_name;device_name;os;os_version;arch,Registry identity; value is always 1.
-metric,exporter_requested_scrape_interval_seconds,gauge,/metrics,adaptive_scheduler,,Exporter-requested device-level scrape interval.
-metric,exporter_snapshot_last_update_timestamp_seconds,gauge,/metrics;/metrics/static,exporter_diagnostics,kind,Unix timestamp of the last dynamic/static snapshot cache update.
-metric,exporter_snapshot_age_seconds,gauge,/metrics;/metrics/static,exporter_diagnostics,kind,Age of the current dynamic/static snapshot cache.
-metric,exporter_snapshot_updates_total,counter,/metrics;/metrics/static,exporter_diagnostics,kind,Total dynamic/static snapshot cache updates.
-metric,exporter_scrape_requests_total,counter,/metrics;/metrics/static,exporter_diagnostics,endpoint;status,Total scrape requests observed by the exporter for metrics endpoints.
-metric,exporter_scrape_last_request_timestamp_seconds,gauge,/metrics;/metrics/static,exporter_diagnostics,endpoint,Unix timestamp of the last scrape request observed for each metrics endpoint.
-metric,exporter_scrape_request_gap_seconds,gauge,/metrics;/metrics/static,exporter_diagnostics,endpoint,Seconds between the two most recent scrape requests for each metrics endpoint.
-metric,exporter_scrape_gaps_total,counter,/metrics;/metrics/static,exporter_diagnostics,endpoint,Total scrape request gaps above the configured diagnostics threshold.
-metric,exporter_requested_scrape_interval_changes_total,counter,/metrics;/metrics/static,exporter_diagnostics,from;to,Total requested scrape interval transitions between adaptive buckets.
-metric,exporter_requested_scrape_interval_last_change_timestamp_seconds,gauge,/metrics;/metrics/static,exporter_diagnostics,,Unix timestamp of the last requested scrape interval transition.
-metric,exporter_collector_up,gauge,/metrics,all_collectors,collector,1 when collector is healthy in the last run.
-metric,exporter_collector_supported,gauge,/metrics/static,all_collectors,collector,1 when collector is supported on the host.
-metric,exporter_collector_errors_total,counter,/metrics,all_collectors,collector,Total collector errors observed by the exporter process.
-metric,exporter_collector_last_success_timestamp_seconds,gauge,/metrics,all_collectors,collector,Unix timestamp of last successful collector run.
-metric,exporter_collector_samples,gauge,/metrics,linux_hwmon;macos_macmon,collector;kind,Useful sample count from the last collection run.
-metric,exporter_macos_macmon_snapshot_age_seconds,gauge,/metrics,macos_macmon,,Age of the latest cached macmon snapshot.
-metric,exporter_macos_macmon_reinitializations_total,counter,/metrics,macos_macmon,,Total macmon sampler reinitializations.
-metric,exporter_macos_macmon_invalid_samples_total,counter,/metrics,macos_macmon,field,Total macmon fields skipped during normalization.
-metric,macmon_cpu_temp_celsius,gauge,/metrics,macos_macmon,chip?,Average CPU temperature in Celsius from macmon.
-metric,macmon_gpu_temp_celsius,gauge,/metrics,macos_macmon,chip?,Average GPU temperature in Celsius from macmon.
-metric,macmon_cpu_power_watts,gauge,/metrics,macos_macmon,chip?,CPU power consumption in watts from macmon.
-metric,macmon_gpu_power_watts,gauge,/metrics,macos_macmon,chip?,GPU power consumption in watts from macmon.
-metric,macmon_ane_power_watts,gauge,/metrics,macos_macmon,chip?,ANE power consumption in watts from macmon.
-metric,macmon_all_power_watts,gauge,/metrics,macos_macmon,chip?,Combined SoC power consumption in watts from macmon.
-metric,macmon_sys_power_watts,gauge,/metrics,macos_macmon,chip?,System power consumption in watts from macmon.
-metric,macmon_ram_power_watts,gauge,/metrics,macos_macmon,chip?,RAM power consumption in watts from macmon.
-metric,macmon_gpu_ram_power_watts,gauge,/metrics,macos_macmon,chip?,GPU RAM power consumption in watts from macmon.
-metric,macmon_cpu_usage_ratio,gauge,/metrics,macos_macmon,chip?,Combined CPU utilization ratio from macmon.
-metric,macmon_ecpu_usage_ratio,gauge,/metrics,macos_macmon,chip?,Efficiency CPU cluster utilization ratio from macmon.
-metric,macmon_pcpu_usage_ratio,gauge,/metrics,macos_macmon,chip?,Performance CPU cluster utilization ratio from macmon.
-metric,macmon_gpu_usage_ratio,gauge,/metrics,macos_macmon,chip?,GPU utilization ratio from macmon.
-metric,macmon_ecpu_frequency_mhz,gauge,/metrics,macos_macmon,chip?,Efficiency CPU cluster frequency in MHz from macmon.
-metric,macmon_pcpu_frequency_mhz,gauge,/metrics,macos_macmon,chip?,Performance CPU cluster frequency in MHz from macmon.
-metric,macmon_gpu_frequency_mhz,gauge,/metrics,macos_macmon,chip?,GPU frequency in MHz from macmon.
-metric,macmon_memory_ram_used_bytes,gauge,/metrics,macos_macmon,chip?,RAM usage in bytes from macmon.
-metric,macmon_memory_ram_total_bytes,gauge,/metrics,macos_macmon,chip?,Total RAM in bytes from macmon.
-metric,macmon_memory_swap_used_bytes,gauge,/metrics,macos_macmon,chip?,Swap usage in bytes from macmon.
-metric,macmon_memory_swap_total_bytes,gauge,/metrics,macos_macmon,chip?,Total swap in bytes from macmon.
-metric,system_uptime_seconds,gauge,/metrics,system;windows_baseline,source,System uptime in seconds.
-metric,system_cpu_count,gauge,/metrics/static,system,source,Logical CPU count.
-metric,system_cpu_usage_ratio,gauge,/metrics,system;windows_baseline;macos_macmon,source;component?,Total system CPU usage ratio from 0 to 1; may be omitted until a reliable delta sample is available.
-metric,system_memory_bytes,gauge,/metrics;/metrics/static,system;windows_baseline;macos_macmon,source;state,Physical memory bytes by state.
-metric,system_swap_bytes,gauge,/metrics;/metrics/static,macos_macmon,source;state,Swap bytes by state.
-metric,system_thermal_state,gauge,/metrics,macos_thermal_state,source;state,macOS thermal pressure state as one-hot gauges.
-metric,system_thermal_state_value,gauge,/metrics,macos_thermal_state,source,macOS thermal pressure numeric state.
-metric,filesystem_bytes,gauge,/metrics;/metrics/static,windows_baseline,source;volume;drive_type;state,Filesystem bytes by state.
-metric,network_bytes_total,counter,/metrics,windows_baseline,source;if_index;interface;direction,Total network bytes by direction.
-metric,system_os_info,gauge,/metrics/static,windows_inventory,source;os;version?;build;arch?,OS identity.
-metric,hardware_cpu_info,gauge,/metrics/static,windows_inventory,source;model;architecture;logical_processors,CPU identity and topology information.
-metric,system_computer_info,gauge,/metrics/static,windows_inventory,source;computer_name;arch,Windows computer identity information.
-metric,hardware_hwmon_chips_discovered,gauge,/metrics,linux_hwmon,collector,Linux hwmon chip directories discovered.
-metric,hardware_hwmon_temperature_inputs_discovered,gauge,/metrics,linux_hwmon,collector,Linux hwmon temp input files discovered before filtering.
-metric,hardware_temperature_celsius,gauge,/metrics,linux_hwmon;linux_amdgpu;linux_drm;nvidia_nvml;windows_lhm_http;windows_lhm_wmi;macos_macmon,component;device_id?;sensor;source;source_driver?;sensor_instance?;gpu_index?;storage_id?;pci_bdf?;storage_model?,Dynamic hardware temperatures.
-metric,hardware_temperature_limit_celsius,gauge,/metrics/static,linux_hwmon,component;device_id;sensor;sensor_instance;source;source_driver;limit;storage_id?;pci_bdf?;storage_model?,Temperature thresholds where available.
-metric,hardware_sensor_info,gauge,/metrics/static,linux_hwmon;windows_lhm_http,component;device_id;sensor;sensor_instance;source;source_driver;raw_label;raw_channel;confidence,Raw sensor mapping metadata; value is 1.
-metric,hardware_device_info,gauge,/metrics/static,linux_hwmon;linux_power_supply;linux_amdgpu;linux_drm;nvidia_nvml;macos_macmon,component;source;device_id?;source_driver?;source-specific labels,Hardware identity information; value is 1.
-metric,hardware_cpu_cluster_cores,gauge,/metrics/static,macos_macmon,cluster;source,Apple Silicon CPU core count by cluster.
-metric,hardware_gpu_cores,gauge,/metrics/static,macos_macmon,gpu_index;source,Apple Silicon GPU core count.
-metric,hardware_clock_available_hertz,gauge,/metrics/static,macos_macmon,component;state;source;cluster?;gpu_index?,Available Apple Silicon hardware clock speeds.
-metric,hardware_storage_capacity_bytes,gauge,/metrics/static,linux_hwmon,component;device_id;source;source_driver;storage_id;namespace,Linux NVMe namespace capacity in bytes.
-metric,hardware_voltage_volts,gauge,/metrics,linux_drm;windows_lhm_http,component;device_id;sensor;sensor_instance;source;source_driver,Voltage readings.
-metric,hardware_current_amperes,gauge,/metrics,windows_lhm_http,component;device_id;sensor;sensor_instance;source;source_driver,Current readings.
-metric,hardware_battery_charge_ratio,gauge,/metrics,linux_power_supply,battery;source,Battery charge as a ratio from 0 to 1.
-metric,hardware_battery_voltage_volts,gauge,/metrics,linux_power_supply,battery;source,Battery voltage in volts.
-metric,hardware_battery_current_amperes,gauge,/metrics,linux_power_supply,battery;source,Battery current in amperes.
-metric,hardware_battery_power_watts,gauge,/metrics,linux_power_supply,battery;direction;derived;source,Battery power in watts; derived=true means voltage multiplied by current.
-metric,hardware_power_watts,gauge,/metrics,linux_amdgpu;linux_drm;nvidia_nvml;windows_lhm_http;macos_macmon,component;source;device_id?;sensor?;sensor_instance?;source_driver?;gpu_index?,Current hardware power in watts.
-metric,hardware_power_limit_watts,gauge,/metrics/static,linux_drm;nvidia_nvml;windows_lhm_http,component;device_id;sensor;source;source_driver;limit;gpu_index?,Power limits in watts.
-metric,hardware_clock_hertz,gauge,/metrics,linux_amdgpu;linux_drm;nvidia_nvml;windows_lhm_http;macos_macmon,component;source;device_id?;sensor?;clock?;unit?;cluster?;source_driver?;gpu_index?,Hardware clock speed in hertz.
-metric,hardware_utilization_ratio,gauge,/metrics,linux_amdgpu;linux_drm;nvidia_nvml;windows_lhm_http;macos_macmon,component;source;device_id?;sensor?;engine?;unit?;cluster?;source_driver?;gpu_index?,Utilization ratio from 0 to 1.
-metric,hardware_memory_bytes,gauge,/metrics;/metrics/static,linux_amdgpu;linux_drm;nvidia_nvml;windows_lhm_http,component;device_id;memory;state;source;source_driver;gpu_index?,Hardware memory bytes by state.
-metric,hardware_fan_speed_ratio,gauge,/metrics,nvidia_nvml;windows_lhm_http,component;device_id;sensor;sensor_instance;source;source_driver;gpu_index?,Fan speed ratio from 0 to 1.
-metric,hardware_fan_speed_rpm,gauge,/metrics,linux_hwmon;linux_drm;windows_lhm_http,component;device_id;sensor;sensor_instance;source;source_driver,Fan or pump speed in RPM.
-metric,hardware_state,gauge,/metrics,linux_amdgpu;linux_drm;nvidia_nvml,component;device_id;sensor;state;source;source_driver;gpu_index,Numeric hardware state values.
-metric,game_active,gauge,/fps,steam_deck_fps,source;appid?;game_name?,Whether a game session is active.
-metric,game_focused,gauge,/fps,steam_deck_fps,source;appid?;game_name?,Whether the active game is focused and visible.
-metric,game_identity_info,gauge,/fps,steam_deck_fps,appid;game_name?;source,Game identity resolved from local Steam app manifests.
-metric,game_frame_source_supported,gauge,/fps,steam_deck_fps,source;queue,Whether Telemon found a candidate frame timing source.
-metric,game_frame_source_selected,gauge,/fps,steam_deck_fps,source;queue,Whether this frame timing source is currently selected by Telemon.
-metric,game_frame_source_up,gauge,/fps,steam_deck_fps,source;queue,Whether valid frame samples were received recently while a game is active.
-metric,game_frame_source_samples_total,counter,/fps,steam_deck_fps,source;queue,Total accepted frame timing samples from the active source.
-metric,game_frame_source_dropped_total,counter,/fps,steam_deck_fps,source;queue;reason,Frame timing samples dropped by source sanity filters: zero too_large invalid_sentinel unsupported_version too_short.
-metric,game_frame_source_last_sample_timestamp_seconds,gauge,/fps,steam_deck_fps,source;queue,Unix timestamp of the last accepted frame timing sample.
-metric,game_frame_count,gauge,/fps,steam_deck_fps,source;queue;window;appid?;game_name?,Frame count in the rolling window.
-metric,game_frame_rate_fps,gauge,/fps,steam_deck_fps,source;queue;window;stat;method;appid?;game_name?,Average FPS and low/high percentile FPS aggregates.
-metric,game_frametime_seconds,gauge,/fps,steam_deck_fps,source;queue;window;stat;appid?;game_name?,Aggregate frame-time values in seconds.
-metric,game_frame_pacing_jitter_seconds,gauge,/fps,steam_deck_fps,source;queue;window;stat;appid?;game_name?,Adjacent frame-time delta in seconds.
+metric,info_build_info,gauge,/metrics/static,exporter,version;os;arch,Build metadata; value is always 1.
+metric,info_device_id,gauge,/metrics/static,registration,device_uuid;machine_uuid;user_name;device_name;os;os_version;arch,Registry identity; value is always 1.
+metric,info_requested_scrape_interval_s,gauge,/metrics,adaptive_scheduler,,Exporter-requested device-level scrape interval.
+metric,info_snapshot_last_update_ts_s,gauge,/metrics;/metrics/static,exporter_diagnostics,kind,Unix timestamp of the last dynamic/static snapshot cache update.
+metric,info_snapshot_age_s,gauge,/metrics;/metrics/static,exporter_diagnostics,kind,Age of the current dynamic/static snapshot cache.
+metric,info_snapshot_updates_total,counter,/metrics;/metrics/static,exporter_diagnostics,kind,Total dynamic/static snapshot cache updates.
+metric,info_scrape_requests_total,counter,/metrics;/metrics/static,exporter_diagnostics,endpoint;status,Total scrape requests observed by the exporter for metrics endpoints.
+metric,info_scrape_last_request_ts_s,gauge,/metrics;/metrics/static,exporter_diagnostics,endpoint,Unix timestamp of the last scrape request observed for each metrics endpoint.
+metric,info_scrape_gap_s,gauge,/metrics;/metrics/static,exporter_diagnostics,endpoint,Seconds between the two most recent scrape requests for each metrics endpoint.
+metric,info_scrape_gaps_total,counter,/metrics;/metrics/static,exporter_diagnostics,endpoint,Total scrape request gaps above the configured diagnostics threshold.
+metric,info_requested_scrape_interval_changes_total,counter,/metrics;/metrics/static,exporter_diagnostics,from;to,Total requested scrape interval transitions between adaptive buckets.
+metric,info_requested_scrape_interval_last_change_ts_s,gauge,/metrics;/metrics/static,exporter_diagnostics,,Unix timestamp of the last requested scrape interval transition.
+metric,info_collector_up,gauge,/metrics,all_collectors,collector,1 when collector is healthy in the last run.
+metric,info_collector_supported,gauge,/metrics/static,all_collectors,collector,1 when collector is supported on the host.
+metric,info_collector_errors_total,counter,/metrics,all_collectors,collector,Total collector errors observed by the exporter process.
+metric,info_collector_last_success_ts_s,gauge,/metrics,all_collectors,collector,Unix timestamp of last successful collector run.
+metric,info_collector_samples,gauge,/metrics,linux_hwmon;macos_macmon,collector;kind,Useful sample count from the last collection run.
+metric,info_macmon_snapshot_age_s,gauge,/metrics,macos_macmon,,Age of the latest cached macmon snapshot.
+metric,info_macmon_reinitializations_total,counter,/metrics,macos_macmon,,Total macmon sampler reinitializations.
+metric,info_macmon_invalid_samples_total,counter,/metrics,macos_macmon,field,Total macmon fields skipped during normalization.
+metric,hw_macmon_cpu_temp_c,gauge,/metrics,macos_macmon,chip?,Average CPU temperature in Celsius from macmon.
+metric,hw_macmon_gpu_temp_c,gauge,/metrics,macos_macmon,chip?,Average GPU temperature in Celsius from macmon.
+metric,hw_macmon_cpu_power_w,gauge,/metrics,macos_macmon,chip?,CPU power consumption in watts from macmon.
+metric,hw_macmon_gpu_power_w,gauge,/metrics,macos_macmon,chip?,GPU power consumption in watts from macmon.
+metric,hw_macmon_ane_power_w,gauge,/metrics,macos_macmon,chip?,ANE power consumption in watts from macmon.
+metric,hw_macmon_soc_power_w,gauge,/metrics,macos_macmon,chip?,Combined SoC power consumption in watts from macmon.
+metric,hw_macmon_system_power_w,gauge,/metrics,macos_macmon,chip?,System power consumption in watts from macmon.
+metric,hw_macmon_ram_power_w,gauge,/metrics,macos_macmon,chip?,RAM power consumption in watts from macmon.
+metric,hw_macmon_gpu_ram_power_w,gauge,/metrics,macos_macmon,chip?,GPU RAM power consumption in watts from macmon.
+metric,sys_macmon_cpu_usage_ratio,gauge,/metrics,macos_macmon,chip?,Combined CPU utilization ratio from macmon.
+metric,hw_macmon_ecpu_usage_ratio,gauge,/metrics,macos_macmon,chip?,Efficiency CPU cluster utilization ratio from macmon.
+metric,hw_macmon_pcpu_usage_ratio,gauge,/metrics,macos_macmon,chip?,Performance CPU cluster utilization ratio from macmon.
+metric,hw_macmon_gpu_usage_ratio,gauge,/metrics,macos_macmon,chip?,GPU utilization ratio from macmon.
+metric,hw_macmon_ecpu_freq_mhz,gauge,/metrics,macos_macmon,chip?,Efficiency CPU cluster frequency in MHz from macmon.
+metric,hw_macmon_pcpu_freq_mhz,gauge,/metrics,macos_macmon,chip?,Performance CPU cluster frequency in MHz from macmon.
+metric,hw_macmon_gpu_freq_mhz,gauge,/metrics,macos_macmon,chip?,GPU frequency in MHz from macmon.
+metric,sys_macmon_ram_used_mb,gauge,/metrics,macos_macmon,chip?,RAM usage in decimal MB from macmon.
+metric,sys_macmon_ram_total_mb,gauge,/metrics,macos_macmon,chip?,Total RAM in decimal MB from macmon.
+metric,sys_macmon_swap_used_mb,gauge,/metrics,macos_macmon,chip?,Swap usage in decimal MB from macmon.
+metric,sys_macmon_swap_total_mb,gauge,/metrics,macos_macmon,chip?,Total swap in decimal MB from macmon.
+metric,sys_uptime_s,gauge,/metrics,system;windows_baseline,source,System uptime in seconds.
+metric,sys_cpu_count,gauge,/metrics/static,system,source,Logical CPU count.
+metric,sys_cpu_usage_ratio,gauge,/metrics,system;windows_baseline;macos_macmon,source;component?,Total system CPU usage ratio from 0 to 1; may be omitted until a reliable delta sample is available.
+metric,sys_mem_mb,gauge,/metrics;/metrics/static,system;windows_baseline;macos_macmon,source;kind;state,Physical memory in decimal MB by state.
+metric,sys_mem_mb,gauge,/metrics;/metrics/static,macos_macmon,source;kind;state,Swap in decimal MB by state.
+metric,sys_thermal_state,gauge,/metrics,macos_thermal_state,source;state,macOS thermal pressure state as one-hot gauges.
+metric,sys_thermal_state_value,gauge,/metrics,macos_thermal_state,source,macOS thermal pressure numeric state.
+metric,sys_fs_space_mb,gauge,/metrics;/metrics/static,windows_baseline,source;volume;drive_type;state,Filesystem space in decimal MB by state.
+metric,net_bytes_total,counter,/metrics,windows_baseline,source;if_index;interface;direction,Total network bytes by direction.
+metric,sys_os_info,gauge,/metrics/static,windows_inventory,source;os;version?;build;arch?,OS identity.
+metric,sys_cpu_info,gauge,/metrics/static,windows_inventory,source;model;architecture;logical_processors,CPU identity and topology information.
+metric,sys_computer_info,gauge,/metrics/static,windows_inventory,source;computer_name;arch,Windows computer identity information.
+metric,info_hwmon_chips_discovered,gauge,/metrics,linux_hwmon,collector,Linux hwmon chip directories discovered.
+metric,info_hwmon_temp_inputs_discovered,gauge,/metrics,linux_hwmon,collector,Linux hwmon temp input files discovered before filtering.
+metric,hw_temp_c,gauge,/metrics,linux_hwmon;linux_amdgpu;linux_drm;nvidia_nvml;windows_lhm_http;windows_lhm_wmi;macos_macmon,component;device_id?;sensor;source;source_driver?;sensor_instance?;gpu_index?;storage_id?;pci_bdf?;storage_model?,Dynamic hardware temperatures.
+metric,hw_temp_limit_c,gauge,/metrics/static,linux_hwmon,component;device_id;sensor;sensor_instance;source;source_driver;limit;storage_id?;pci_bdf?;storage_model?,Temperature thresholds where available.
+metric,hw_sensor_info,gauge,/metrics/static,linux_hwmon;windows_lhm_http,component;device_id;sensor;sensor_instance;source;source_driver;raw_label;raw_channel;confidence,Raw sensor mapping metadata; value is 1.
+metric,hw_device_info,gauge,/metrics/static,linux_hwmon;linux_power_supply;linux_amdgpu;linux_drm;nvidia_nvml;macos_macmon,component;source;device_id?;source_driver?;source-specific labels,Hardware identity information; value is 1.
+metric,hw_cpu_cluster_cores,gauge,/metrics/static,macos_macmon,cluster;source,Apple Silicon CPU core count by cluster.
+metric,hw_gpu_cores,gauge,/metrics/static,macos_macmon,gpu_index;source,Apple Silicon GPU core count.
+metric,hw_freq_available_mhz,gauge,/metrics/static,macos_macmon,component;state;source;cluster?;gpu_index?,Available Apple Silicon hardware clock speeds.
+metric,storage_capacity_mb,gauge,/metrics/static,linux_hwmon,component;device_id;source;source_driver;storage_id;namespace,Linux NVMe namespace capacity in decimal MB.
+metric,hw_voltage_v,gauge,/metrics,linux_drm;windows_lhm_http,component;device_id;sensor;sensor_instance;source;source_driver,Voltage readings.
+metric,hw_current_a,gauge,/metrics,windows_lhm_http,component;device_id;sensor;sensor_instance;source;source_driver,Current readings.
+metric,batt_charge_ratio,gauge,/metrics,linux_power_supply,battery;source,Battery charge as a ratio from 0 to 1.
+metric,batt_voltage_v,gauge,/metrics,linux_power_supply,battery;source,Battery voltage in volts.
+metric,batt_current_a,gauge,/metrics,linux_power_supply,battery;source,Battery current in amperes.
+metric,batt_power_w,gauge,/metrics,linux_power_supply,battery;direction;derived;source,Battery power in watts; derived=true means voltage multiplied by current.
+metric,hw_power_w,gauge,/metrics,linux_amdgpu;linux_drm;nvidia_nvml;windows_lhm_http;macos_macmon,component;source;device_id?;sensor?;sensor_instance?;source_driver?;gpu_index?,Current hardware power in watts.
+metric,hw_power_limit_w,gauge,/metrics/static,linux_drm;nvidia_nvml;windows_lhm_http,component;device_id;sensor;source;source_driver;limit;gpu_index?,Power limits in watts.
+metric,hw_freq_mhz,gauge,/metrics,linux_amdgpu;linux_drm;nvidia_nvml;windows_lhm_http;macos_macmon,component;source;device_id?;sensor?;clock?;unit?;cluster?;source_driver?;gpu_index?,Hardware frequency in decimal MHz.
+metric,hw_util_ratio,gauge,/metrics,linux_amdgpu;linux_drm;nvidia_nvml;windows_lhm_http;macos_macmon,component;source;device_id?;sensor?;engine?;unit?;cluster?;source_driver?;gpu_index?,Utilization ratio from 0 to 1.
+metric,hw_mem_mb,gauge,/metrics;/metrics/static,linux_amdgpu;linux_drm;nvidia_nvml;windows_lhm_http,component;device_id;memory;state;source;source_driver;gpu_index?,Hardware memory in decimal MB by state.
+metric,hw_fan_ratio,gauge,/metrics,nvidia_nvml;windows_lhm_http,component;device_id;sensor;sensor_instance;source;source_driver;gpu_index?,Fan speed ratio from 0 to 1.
+metric,hw_fan_rpm,gauge,/metrics,linux_hwmon;linux_drm;windows_lhm_http,component;device_id;sensor;sensor_instance;source;source_driver,Fan or pump speed in RPM.
+metric,hw_state,gauge,/metrics,linux_amdgpu;linux_drm;nvidia_nvml,component;device_id;sensor;state;source;source_driver;gpu_index,Numeric hardware state values.
+metric,game_session_active,gauge,/fps,steam_deck_fps,state_source;appid?;title?,1 when a game session is active.
+metric,game_session_focused,gauge,/fps,steam_deck_fps,state_source;appid?;title?,1 when the active game is focused and visible.
+metric,game_session_info,gauge,/fps,steam_deck_fps,appid;title;identity_source,Game identity resolved from local Steam app manifests.
+metric,game_session_start_ts_s,gauge,/fps,steam_deck_fps,state_source;appid?;title?,Unix timestamp for the current game session start.
+metric,game_fps_source_selected,gauge,/fps,steam_deck_fps,source,Selected FPS backend.
+metric,game_fps_source_available,gauge,/fps,steam_deck_fps,source,Available FPS backend.
+metric,game_fps_source_healthy,gauge,/fps,steam_deck_fps,source,Recent valid frame samples while a game is active.
+metric,game_fps_source_samples_total,counter,/fps,steam_deck_fps,source,Accepted frame timing sample counter.
+metric,game_fps_source_sample_drops_total,counter,/fps,steam_deck_fps,source;reason,Dropped frame timing sample counter.
+metric,game_fps_source_sample_last_ts_s,gauge,/fps,steam_deck_fps,source,Unix timestamp of last accepted frame sample.
+metric,game_fps_source_sample_age_s,gauge,/fps,steam_deck_fps,source,Age of last accepted frame sample.
+metric,game_fps_source_sample_interval_ms,gauge,/fps,steam_deck_fps,source,Wall-clock interval between accepted samples.
+metric,game_frame_samples,gauge,/fps,steam_deck_fps,source;window;appid?;title?,Frame samples in the rolling window.
+metric,game_fps,gauge,/fps,steam_deck_fps,source;window;stat;appid?;title?,FPS by rolling-window statistic: avg low_1pct low_0_1pct.
+metric,game_frame_ms,gauge,/fps,steam_deck_fps,source;window;stat;appid?;title?,Frame time milliseconds by statistic: avg min max p50 p95 p99.
+metric,game_jitter_ms,gauge,/fps,steam_deck_fps,source;window;stat;appid?;title?,Frame pacing jitter milliseconds by statistic: avg p95 p99 max.
+metric,game_fps_source_backend_info,gauge,/fps/debug,steam_deck_fps,source;queue,Backend-specific FPS source metadata.
+metric,game_fps_source_sample_payload_bytes,gauge,/fps/debug,steam_deck_fps,source;queue,Last accepted backend sample payload bytes.
+metric,game_fps_source_output_pixels,gauge,/fps/debug,steam_deck_fps,source;queue;axis,Backend output width or height in pixels.

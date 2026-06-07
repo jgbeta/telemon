@@ -636,7 +636,7 @@ fn gpu_memory_metric(index: u32, state: &str, value: u64) -> MetricSample {
     let device_id = gpu_device_id(index);
     MetricSample::gauge(
         names::GPU_MEMORY_TOTAL_BYTES,
-        "Hardware memory bytes by state.",
+        "Hardware memory in decimal megabytes by state.",
         labels(&[
             ("component", "gpu"),
             ("device_id", device_id.as_str()),
@@ -646,7 +646,7 @@ fn gpu_memory_metric(index: u32, state: &str, value: u64) -> MetricSample {
             ("source", SOURCE),
             ("source_driver", "nvml"),
         ]),
-        value as f64,
+        value as f64 / 1_000_000.0,
     )
 }
 
@@ -699,7 +699,7 @@ fn gpu_clock_metric(index: u32, clock: &str, mhz: u32) -> MetricSample {
     };
     MetricSample::gauge(
         names::GPU_CLOCK_HERTZ,
-        "Hardware clock speed in hertz.",
+        "Hardware frequency in decimal megahertz.",
         labels(&[
             ("component", "gpu"),
             ("device_id", device_id.as_str()),
@@ -709,7 +709,7 @@ fn gpu_clock_metric(index: u32, clock: &str, mhz: u32) -> MetricSample {
             ("source", SOURCE),
             ("source_driver", "nvml"),
         ]),
-        mhz as f64 * 1_000_000.0,
+        mhz as f64,
     )
 }
 
@@ -892,7 +892,7 @@ mod tests {
                 names::GPU_MEMORY_USED_BYTES,
                 &[("gpu_index", "0"), ("state", "used")]
             ),
-            Some(2.0 * 1024.0 * 1024.0 * 1024.0)
+            Some(2.0 * 1024.0 * 1024.0 * 1024.0 / 1_000_000.0)
         );
         assert_eq!(
             metric_value(&result, names::FAN_SPEED_RATIO, ("gpu_index", "0")),
@@ -912,7 +912,7 @@ mod tests {
                 names::GPU_CLOCK_HERTZ,
                 &[("gpu_index", "0"), ("clock", "graphics")]
             ),
-            Some(2_520_000_000.0)
+            Some(2_520.0)
         );
         assert_eq!(
             metric_value_with_labels(
@@ -920,7 +920,7 @@ mod tests {
                 names::GPU_CLOCK_HERTZ,
                 &[("gpu_index", "0"), ("clock", "memory")]
             ),
-            Some(10_501_000_000.0)
+            Some(10_501.0)
         );
         assert_eq!(
             metric_value(&result, names::GPU_PERFORMANCE_STATE, ("gpu_index", "0")),
