@@ -42,6 +42,7 @@ metric,sys_macmon_swap_total_mb,gauge,/metrics,macos_macmon,chip?,Total swap in 
 metric,sys_uptime_s,gauge,/metrics,system;windows_baseline,source,System uptime in seconds.
 metric,sys_cpu_count,gauge,/metrics/static,system,source,Logical CPU count.
 metric,sys_cpu_usage_ratio,gauge,/metrics,system;windows_baseline;macos_macmon,source;component?,Total system CPU usage ratio from 0 to 1; may be omitted until a reliable delta sample is available.
+metric,sys_cpu_freq_mhz,gauge,/metrics,system;windows_baseline;macos_macmon,source;scope;cpu?;cluster?;state,Current CPU frequency in decimal MHz. Linux and Windows use logical CPU scope; macOS macmon uses cluster scope.
 metric,sys_mem_mb,gauge,/metrics;/metrics/static,system;windows_baseline;macos_macmon,source;kind;state,Physical memory in decimal MB by state.
 metric,sys_mem_mb,gauge,/metrics;/metrics/static,macos_macmon,source;kind;state,Swap in decimal MB by state.
 metric,sys_thermal_state,gauge,/metrics,macos_thermal_state,source;state,macOS thermal pressure state as one-hot gauges.

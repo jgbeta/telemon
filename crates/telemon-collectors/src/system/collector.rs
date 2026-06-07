@@ -1,5 +1,7 @@
 #[cfg(target_os = "linux")]
 use std::fs;
+#[cfg(target_os = "linux")]
+use std::path::Path;
 use std::time::Instant;
 #[cfg(target_os = "macos")]
 use std::time::{SystemTime, UNIX_EPOCH};
@@ -7,7 +9,7 @@ use std::time::{SystemTime, UNIX_EPOCH};
 use anyhow::Result;
 use tracing::debug;
 
-use crate::system::model::SystemSnapshot;
+use crate::system::model::{CpuFrequencySample, SystemSnapshot};
 use crate::traits::{collector_health_metrics, unix_timestamp_seconds, Collector, CollectorResult};
 use telemon_core::config::SystemConfig;
 use telemon_core::metrics::model::{labels, MetricSample};
@@ -15,6 +17,11 @@ use telemon_core::metrics::names;
 
 pub const COLLECTOR_NAME: &str = "system";
 pub const SOURCE: &str = "system";
+#[cfg(target_os = "linux")]
+const LINUX_CPUFREQ_SOURCE: &str = "linux_cpufreq";
+#[cfg(target_os = "linux")]
+const LINUX_PROC_CPUINFO_SOURCE: &str = "linux_proc_cpuinfo";
+const MAX_CPU_FREQUENCY_MHZ: f64 = 20_000.0;
 
 pub trait SystemProvider: Send + Sync {
     fn snapshot(&mut self) -> Result<SystemSnapshot>;
@@ -104,6 +111,7 @@ impl SystemProvider for DefaultSystemProvider {
             memory_available_bytes: memory_available_bytes(),
             cpu_count: cpu_count(),
             cpu_usage_ratio: cpu_usage_ratio(self),
+            cpu_frequency_samples: cpu_frequency_samples(),
         })
     }
 }
@@ -164,6 +172,22 @@ fn snapshot_to_metrics(config: &SystemConfig, snapshot: &SystemSnapshot) -> Vec<
                 value,
             ));
         }
+        for sample in &snapshot.cpu_frequency_samples {
+            if let Some(value) = normalize_cpu_frequency_mhz(sample.frequency_mhz) {
+                let cpu = sample.cpu.to_string();
+                metrics.push(MetricSample::gauge(
+                    names::CPU_FREQUENCY_MHZ,
+                    "Current logical CPU frequency in decimal megahertz.",
+                    labels(&[
+                        ("source", sample.source),
+                        ("scope", "logical_cpu"),
+                        ("cpu", cpu.as_str()),
+                        ("state", "current"),
+                    ]),
+                    value,
+                ));
+            }
+        }
     }
 
     metrics
@@ -194,6 +218,18 @@ fn normalize_cpu_usage_ratio(value: f64) -> Option<f64> {
     }
 
     debug!(cpu_usage_ratio = value, "omitting invalid CPU usage ratio");
+    None
+}
+
+fn normalize_cpu_frequency_mhz(value: f64) -> Option<f64> {
+    if value.is_finite() && value > 0.0 && value <= MAX_CPU_FREQUENCY_MHZ {
+        return Some(value);
+    }
+
+    debug!(
+        cpu_frequency_mhz = value,
+        "omitting invalid CPU frequency sample"
+    );
     None
 }
 
@@ -256,6 +292,111 @@ fn linux_cpu_usage_ratio(previous: LinuxCpuTimes, current: LinuxCpuTimes) -> Opt
     }
     let idle_delta = current.idle.saturating_sub(previous.idle).min(total_delta);
     Some((total_delta - idle_delta) as f64 / total_delta as f64)
+}
+
+#[cfg(target_os = "linux")]
+fn cpu_frequency_samples() -> Vec<CpuFrequencySample> {
+    let sysfs_samples = read_linux_cpufreq_samples(Path::new("/sys/devices/system/cpu"));
+    if !sysfs_samples.is_empty() {
+        return sysfs_samples;
+    }
+
+    read_linux_proc_cpuinfo_frequency_samples()
+}
+
+#[cfg(not(target_os = "linux"))]
+fn cpu_frequency_samples() -> Vec<CpuFrequencySample> {
+    Vec::new()
+}
+
+#[cfg(target_os = "linux")]
+fn read_linux_cpufreq_samples(root: &Path) -> Vec<CpuFrequencySample> {
+    let mut samples = Vec::new();
+    let Ok(entries) = fs::read_dir(root) else {
+        return samples;
+    };
+
+    for entry in entries.flatten() {
+        let Some(cpu_name) = entry.file_name().to_str().map(str::to_string) else {
+            continue;
+        };
+        let cpufreq = entry.path().join("cpufreq");
+        let frequency_text = fs::read_to_string(cpufreq.join("scaling_cur_freq"))
+            .or_else(|_| fs::read_to_string(cpufreq.join("cpuinfo_cur_freq")));
+        let Ok(frequency_text) = frequency_text else {
+            continue;
+        };
+        if let Some(sample) = parse_linux_cpufreq_sample(&cpu_name, &frequency_text) {
+            samples.push(sample);
+        }
+    }
+
+    sort_cpu_frequency_samples(&mut samples);
+    samples
+}
+
+#[cfg(target_os = "linux")]
+fn parse_linux_cpufreq_sample(cpu_name: &str, frequency_text: &str) -> Option<CpuFrequencySample> {
+    let cpu = parse_linux_cpu_index(cpu_name)?;
+    let khz = frequency_text.trim().parse::<f64>().ok()?;
+    let frequency_mhz = normalize_cpu_frequency_mhz(khz / 1_000.0)?;
+    Some(CpuFrequencySample {
+        cpu,
+        frequency_mhz,
+        source: LINUX_CPUFREQ_SOURCE,
+    })
+}
+
+#[cfg(target_os = "linux")]
+fn read_linux_proc_cpuinfo_frequency_samples() -> Vec<CpuFrequencySample> {
+    let Some(text) = fs::read_to_string("/proc/cpuinfo").ok() else {
+        return Vec::new();
+    };
+    parse_linux_proc_cpuinfo_frequency_samples(&text)
+}
+
+#[cfg(target_os = "linux")]
+fn parse_linux_proc_cpuinfo_frequency_samples(text: &str) -> Vec<CpuFrequencySample> {
+    let mut samples = Vec::new();
+    let mut current_cpu = None;
+
+    for line in text.lines() {
+        let Some((key, value)) = line.split_once(':') else {
+            continue;
+        };
+        match key.trim() {
+            "processor" => current_cpu = value.trim().parse::<u32>().ok(),
+            "cpu MHz" => {
+                let Some(cpu) = current_cpu.take() else {
+                    continue;
+                };
+                let Ok(frequency_mhz) = value.trim().parse::<f64>() else {
+                    continue;
+                };
+                if let Some(frequency_mhz) = normalize_cpu_frequency_mhz(frequency_mhz) {
+                    samples.push(CpuFrequencySample {
+                        cpu,
+                        frequency_mhz,
+                        source: LINUX_PROC_CPUINFO_SOURCE,
+                    });
+                }
+            }
+            _ => {}
+        }
+    }
+
+    sort_cpu_frequency_samples(&mut samples);
+    samples
+}
+
+#[cfg(target_os = "linux")]
+fn parse_linux_cpu_index(cpu_name: &str) -> Option<u32> {
+    cpu_name.strip_prefix("cpu")?.parse::<u32>().ok()
+}
+
+#[cfg(target_os = "linux")]
+fn sort_cpu_frequency_samples(samples: &mut [CpuFrequencySample]) {
+    samples.sort_by_key(|sample| sample.cpu);
 }
 
 #[cfg(target_os = "macos")]
@@ -434,6 +575,11 @@ mod tests {
             memory_available_bytes: Some(6_000_000),
             cpu_count: Some(10),
             cpu_usage_ratio: Some(0.25),
+            cpu_frequency_samples: vec![CpuFrequencySample {
+                cpu: 0,
+                frequency_mhz: 2_800.0,
+                source: "linux_cpufreq",
+            }],
         });
 
         assert_eq!(
@@ -475,6 +621,19 @@ mod tests {
                 &[("component", "cpu"), ("source", SOURCE)]
             ),
             Some(0.25)
+        );
+        assert_eq!(
+            metric_value(
+                &metrics,
+                names::CPU_FREQUENCY_MHZ,
+                &[
+                    ("cpu", "0"),
+                    ("scope", "logical_cpu"),
+                    ("source", "linux_cpufreq"),
+                    ("state", "current")
+                ]
+            ),
+            Some(2_800.0)
         );
     }
 
@@ -530,5 +689,106 @@ mod tests {
             &[("source", SOURCE), ("kind", "ram"), ("state", "used")]
         )
         .is_none());
+    }
+
+    #[test]
+    fn cpu_disabled_omits_frequency_samples() {
+        let config = SystemConfig {
+            cpu_enabled: false,
+            ..SystemConfig::default()
+        };
+        let mut collector = SystemCollector::with_provider(
+            config,
+            FakeProvider {
+                snapshot: Some(SystemSnapshot {
+                    cpu_frequency_samples: vec![CpuFrequencySample {
+                        cpu: 0,
+                        frequency_mhz: 2_800.0,
+                        source: "linux_cpufreq",
+                    }],
+                    ..SystemSnapshot::default()
+                }),
+            },
+        );
+
+        let metrics = collector.collect().metrics;
+
+        assert!(metrics
+            .iter()
+            .all(|metric| metric.name != names::CPU_FREQUENCY_MHZ));
+    }
+
+    #[test]
+    fn invalid_cpu_frequency_samples_are_omitted() {
+        let metrics = collect_from_snapshot(SystemSnapshot {
+            cpu_frequency_samples: vec![CpuFrequencySample {
+                cpu: 0,
+                frequency_mhz: 0.0,
+                source: "linux_cpufreq",
+            }],
+            ..SystemSnapshot::default()
+        });
+
+        assert!(metrics
+            .iter()
+            .all(|metric| metric.name != names::CPU_FREQUENCY_MHZ));
+    }
+
+    #[cfg(target_os = "linux")]
+    #[test]
+    fn parses_linux_cpufreq_samples_as_logical_cpu_frequency() {
+        let mut samples = vec![
+            parse_linux_cpufreq_sample("cpu10", "2800000\n").unwrap(),
+            parse_linux_cpufreq_sample("cpu2", "1700000\n").unwrap(),
+        ];
+        sort_cpu_frequency_samples(&mut samples);
+
+        assert_eq!(
+            samples,
+            vec![
+                CpuFrequencySample {
+                    cpu: 2,
+                    frequency_mhz: 1_700.0,
+                    source: LINUX_CPUFREQ_SOURCE,
+                },
+                CpuFrequencySample {
+                    cpu: 10,
+                    frequency_mhz: 2_800.0,
+                    source: LINUX_CPUFREQ_SOURCE,
+                },
+            ]
+        );
+        assert!(parse_linux_cpufreq_sample("notcpu", "2800000\n").is_none());
+        assert!(parse_linux_cpufreq_sample("cpu0", "0\n").is_none());
+        assert!(parse_linux_cpufreq_sample("cpu0", "25000000\n").is_none());
+    }
+
+    #[cfg(target_os = "linux")]
+    #[test]
+    fn parses_proc_cpuinfo_frequency_fallback_samples() {
+        let samples = parse_linux_proc_cpuinfo_frequency_samples(
+            "processor   : 1
+cpu MHz     : 3512.345
+
+processor   : 0
+cpu MHz     : 800.000
+",
+        );
+
+        assert_eq!(
+            samples,
+            vec![
+                CpuFrequencySample {
+                    cpu: 0,
+                    frequency_mhz: 800.0,
+                    source: LINUX_PROC_CPUINFO_SOURCE,
+                },
+                CpuFrequencySample {
+                    cpu: 1,
+                    frequency_mhz: 3512.345,
+                    source: LINUX_PROC_CPUINFO_SOURCE,
+                },
+            ]
+        );
     }
 }

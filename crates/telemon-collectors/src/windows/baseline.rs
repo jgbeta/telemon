@@ -3,6 +3,8 @@ use std::time::Instant;
 #[cfg(target_os = "windows")]
 use anyhow::{anyhow, Result};
 use serde::Serialize;
+#[cfg(target_os = "windows")]
+use tracing::debug;
 
 #[cfg(target_os = "windows")]
 use crate::traits::unix_timestamp_seconds;
@@ -15,6 +17,10 @@ use telemon_core::metrics::names;
 
 pub const COLLECTOR_NAME: &str = "windows_baseline";
 pub const SOURCE: &str = "windows_api";
+#[cfg(any(target_os = "windows", test))]
+const WINDOWS_POWER_SOURCE: &str = "windows_power";
+#[cfg(any(target_os = "windows", test))]
+const MAX_CPU_FREQUENCY_MHZ: f64 = 20_000.0;
 
 #[derive(Debug, Clone)]
 pub struct WindowsBaselineCollector {
@@ -161,6 +167,7 @@ fn collect_windows_metrics(
     if let Some(cpu_usage) = cpu_usage_ratio(previous_cpu)? {
         metrics.push(cpu_usage_metric(cpu_usage));
     }
+    metrics.extend(cpu_frequency_metrics());
 
     let memory = memory_status()?;
     metrics.extend(memory_metrics(memory));
@@ -188,6 +195,99 @@ fn cpu_usage_metric(value: f64) -> MetricSample {
         labels(&[("component", "cpu"), ("source", SOURCE)]),
         value.clamp(0.0, 1.0),
     )
+}
+
+#[cfg(target_os = "windows")]
+fn cpu_frequency_metrics() -> Vec<MetricSample> {
+    match read_processor_frequency_samples() {
+        Ok(samples) => processor_frequency_samples_to_metrics(&samples),
+        Err(error) => {
+            debug!(%error, "omitting Windows CPU frequency metrics");
+            Vec::new()
+        }
+    }
+}
+
+#[cfg(target_os = "windows")]
+fn read_processor_frequency_samples() -> Result<Vec<ProcessorFrequencySample>> {
+    use std::mem::size_of;
+    use windows_sys::Win32::System::Power::{
+        CallNtPowerInformation, ProcessorInformation, PROCESSOR_POWER_INFORMATION,
+    };
+
+    let processor_count = std::thread::available_parallelism()
+        .map(|count| count.get())
+        .map_err(|error| anyhow!("available_parallelism failed: {error}"))?;
+    let mut raw = vec![PROCESSOR_POWER_INFORMATION::default(); processor_count];
+    let output_len = raw
+        .len()
+        .checked_mul(size_of::<PROCESSOR_POWER_INFORMATION>())
+        .and_then(|len| u32::try_from(len).ok())
+        .ok_or_else(|| anyhow!("processor power information buffer is too large"))?;
+
+    unsafe {
+        let status = CallNtPowerInformation(
+            ProcessorInformation,
+            std::ptr::null(),
+            0,
+            raw.as_mut_ptr().cast(),
+            output_len,
+        );
+        if status < 0 {
+            return Err(anyhow!(
+                "CallNtPowerInformation(ProcessorInformation) failed with status {status}"
+            ));
+        }
+    }
+
+    let mut samples = raw
+        .into_iter()
+        .map(|info| ProcessorFrequencySample {
+            cpu: info.Number,
+            frequency_mhz: f64::from(info.CurrentMhz),
+        })
+        .collect::<Vec<_>>();
+    samples.sort_by_key(|sample| sample.cpu);
+    Ok(samples)
+}
+
+#[cfg(any(target_os = "windows", test))]
+#[derive(Debug, Clone, Copy, PartialEq)]
+struct ProcessorFrequencySample {
+    cpu: u32,
+    frequency_mhz: f64,
+}
+
+#[cfg(any(target_os = "windows", test))]
+fn processor_frequency_samples_to_metrics(
+    samples: &[ProcessorFrequencySample],
+) -> Vec<MetricSample> {
+    samples
+        .iter()
+        .filter_map(|sample| processor_frequency_sample_to_metric(*sample))
+        .collect()
+}
+
+#[cfg(any(target_os = "windows", test))]
+fn processor_frequency_sample_to_metric(sample: ProcessorFrequencySample) -> Option<MetricSample> {
+    let value = normalize_cpu_frequency_mhz(sample.frequency_mhz)?;
+    let cpu = sample.cpu.to_string();
+    Some(MetricSample::gauge(
+        names::CPU_FREQUENCY_MHZ,
+        "Current logical CPU frequency in decimal megahertz.",
+        labels(&[
+            ("source", WINDOWS_POWER_SOURCE),
+            ("scope", "logical_cpu"),
+            ("cpu", cpu.as_str()),
+            ("state", "current"),
+        ]),
+        value,
+    ))
+}
+
+#[cfg(any(target_os = "windows", test))]
+fn normalize_cpu_frequency_mhz(value: f64) -> Option<f64> {
+    (value.is_finite() && value > 0.0 && value <= MAX_CPU_FREQUENCY_MHZ).then_some(value)
 }
 
 #[cfg(any(target_os = "windows", test))]
@@ -622,6 +722,35 @@ mod tests {
             ),
             Some(10.0)
         );
+    }
+
+    #[test]
+    fn processor_frequency_samples_emit_logical_cpu_metrics() {
+        let metrics = processor_frequency_samples_to_metrics(&[
+            ProcessorFrequencySample {
+                cpu: 1,
+                frequency_mhz: 3_200.0,
+            },
+            ProcessorFrequencySample {
+                cpu: 2,
+                frequency_mhz: 0.0,
+            },
+        ]);
+
+        assert_eq!(
+            metric_value(
+                &metrics,
+                names::CPU_FREQUENCY_MHZ,
+                &[
+                    ("source", WINDOWS_POWER_SOURCE),
+                    ("scope", "logical_cpu"),
+                    ("cpu", "1"),
+                    ("state", "current"),
+                ]
+            ),
+            Some(3_200.0)
+        );
+        assert_eq!(metrics.len(), 1);
     }
 
     #[test]

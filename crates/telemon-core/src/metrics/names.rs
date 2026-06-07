@@ -22,6 +22,7 @@ pub const COLLECTOR_LAST_SUCCESS_TIMESTAMP_SECONDS: &str = "info_collector_last_
 pub const COLLECTOR_SAMPLES: &str = "info_collector_samples";
 pub const UPTIME_SECONDS: &str = "sys_uptime_s";
 pub const CPU_USAGE_RATIO: &str = "sys_cpu_usage_ratio";
+pub const CPU_FREQUENCY_MHZ: &str = "sys_cpu_freq_mhz";
 pub const SYSTEM_CPU_COUNT: &str = "sys_cpu_count";
 pub const SYSTEM_THERMAL_STATE: &str = "sys_thermal_state";
 pub const SYSTEM_THERMAL_STATE_VALUE: &str = "sys_thermal_state_value";

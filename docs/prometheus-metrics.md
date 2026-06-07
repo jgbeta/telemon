@@ -117,6 +117,7 @@ default `honor_labels: false`, conflicting scraped labels can be renamed to
 | `sys_uptime_s` | gauge | `/metrics` | `system`, `windows_baseline` | `source` | System uptime in seconds. |
 | `sys_cpu_count` | gauge | `/metrics/static` | `system` | `source` | Logical CPU count. |
 | `sys_cpu_usage_ratio` | gauge | `/metrics` | `system`, `windows_baseline`, `macos_macmon` | `source`, optional `component` | Total system CPU usage ratio from `0` to `1`; collectors may omit it until a reliable delta sample is available. |
+| `sys_cpu_freq_mhz` | gauge | `/metrics` | `system`, `windows_baseline`, `macos_macmon` | `source`, `scope`, optional `cpu`, optional `cluster`, `state` | Current CPU frequency in decimal MHz. Linux and Windows emit `scope="logical_cpu"` with `cpu`; macOS macmon emits `scope="cluster"` with `cluster="efficiency"` or `cluster="performance"`. |
 | `sys_mem_mb` | gauge | `/metrics`, `/metrics/static` | `system`, `windows_baseline`, `macos_macmon` | `source`, `kind`, `state` | Physical memory in decimal MB; `state` is `total`, `available`, or `used`. `total` is static. |
 | `sys_mem_mb` | gauge | `/metrics`, `/metrics/static` | `macos_macmon` | `source`, `state` | Swap in decimal MB; `state` is `total` or `used`. `total` is static. |
 | `sys_thermal_state` | gauge | `/metrics` | `macos_thermal_state` | `source`, `state` | macOS thermal pressure state as one-hot gauges for `nominal`, `fair`, `serious`, `critical`, and `unknown`; `source="macos_processinfo"`. |

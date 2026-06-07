@@ -629,6 +629,7 @@ fn snapshot_to_dynamic_metrics(
             "efficiency",
             hertz_to_mhz(value),
         ));
+        metrics.push(cpu_frequency_metric("efficiency", hertz_to_mhz(value)));
         metrics.push(macmon_metric(
             names::MACMON_ECPU_FREQUENCY_MHZ,
             "Efficiency CPU cluster frequency in MHz from macmon.",
@@ -643,6 +644,7 @@ fn snapshot_to_dynamic_metrics(
             "performance",
             hertz_to_mhz(value),
         ));
+        metrics.push(cpu_frequency_metric("performance", hertz_to_mhz(value)));
         metrics.push(macmon_metric(
             names::MACMON_PCPU_FREQUENCY_MHZ,
             "Performance CPU cluster frequency in MHz from macmon.",
@@ -823,6 +825,20 @@ fn cpu_cluster_metric(name: &str, help: &str, cluster: &str, value: f64) -> Metr
             ("unit", "cluster"),
             ("cluster", cluster),
             ("source", SOURCE),
+        ]),
+        value,
+    )
+}
+
+fn cpu_frequency_metric(cluster: &str, value: f64) -> MetricSample {
+    MetricSample::gauge(
+        names::CPU_FREQUENCY_MHZ,
+        "Current CPU cluster frequency in decimal megahertz.",
+        labels(&[
+            ("source", SOURCE),
+            ("scope", "cluster"),
+            ("cluster", cluster),
+            ("state", "current"),
         ]),
         value,
     )
@@ -1259,6 +1275,32 @@ mod tests {
                 &[("chip", "Apple M3 Pro")]
             ),
             Some(744.0)
+        );
+        assert_eq!(
+            metric_value(
+                &metrics,
+                names::CPU_FREQUENCY_MHZ,
+                &[
+                    ("cluster", "efficiency"),
+                    ("scope", "cluster"),
+                    ("source", SOURCE),
+                    ("state", "current"),
+                ]
+            ),
+            Some(744.0)
+        );
+        assert_eq!(
+            metric_value(
+                &metrics,
+                names::CPU_FREQUENCY_MHZ,
+                &[
+                    ("cluster", "performance"),
+                    ("scope", "cluster"),
+                    ("source", SOURCE),
+                    ("state", "current"),
+                ]
+            ),
+            Some(3_600.0)
         );
         assert_eq!(
             metric_value(
