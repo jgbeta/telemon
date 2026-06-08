@@ -4,6 +4,8 @@ use serde::Serialize;
 use telemon_core::metrics::model::MetricSample;
 use telemon_core::metrics::names;
 
+const BYTES_PER_DECIMAL_MB: f64 = 1_000_000.0;
+
 #[derive(Debug, Serialize)]
 struct MacmonJsonSnapshot {
     timestamp: String,
@@ -51,10 +53,10 @@ pub fn encode_snapshot(
             gpu_temp_avg: metric_f64(&samples, names::MACMON_GPU_TEMP_CELSIUS),
         },
         memory: MacmonJsonMemory {
-            ram_total: metric_u64(&samples, names::MACMON_MEMORY_RAM_TOTAL_BYTES),
-            ram_usage: metric_u64(&samples, names::MACMON_MEMORY_RAM_USED_BYTES),
-            swap_total: metric_u64(&samples, names::MACMON_MEMORY_SWAP_TOTAL_BYTES),
-            swap_usage: metric_u64(&samples, names::MACMON_MEMORY_SWAP_USED_BYTES),
+            ram_total: metric_decimal_mb_as_bytes(&samples, names::MACMON_MEMORY_RAM_TOTAL_BYTES),
+            ram_usage: metric_decimal_mb_as_bytes(&samples, names::MACMON_MEMORY_RAM_USED_BYTES),
+            swap_total: metric_decimal_mb_as_bytes(&samples, names::MACMON_MEMORY_SWAP_TOTAL_BYTES),
+            swap_usage: metric_decimal_mb_as_bytes(&samples, names::MACMON_MEMORY_SWAP_USED_BYTES),
         },
         ecpu_usage: metric_pair(
             &samples,
@@ -102,10 +104,13 @@ fn metric_f64(samples: &[MetricSample], name: &str) -> Option<f64> {
         .map(|sample| sample.value)
 }
 
-fn metric_u64(samples: &[MetricSample], name: &str) -> Option<u64> {
-    metric_f64(samples, name)
-        .filter(|value| *value >= 0.0)
-        .map(|value| value.round() as u64)
+fn metric_decimal_mb_as_bytes(samples: &[MetricSample], name: &str) -> Option<u64> {
+    let bytes = metric_f64(samples, name)? * BYTES_PER_DECIMAL_MB;
+    if bytes.is_finite() && bytes >= 0.0 && bytes <= u64::MAX as f64 {
+        Some(bytes.round() as u64)
+    } else {
+        None
+    }
 }
 
 #[cfg(test)]
@@ -132,10 +137,10 @@ mod tests {
                 gauge(names::MACMON_CPU_USAGE_RATIO, 0.036854),
                 gauge(names::MACMON_GPU_FREQUENCY_MHZ, 461.0),
                 gauge(names::MACMON_GPU_USAGE_RATIO, 0.021497859),
-                gauge(names::MACMON_MEMORY_RAM_USED_BYTES, 20_985_479_168.0),
-                gauge(names::MACMON_MEMORY_RAM_TOTAL_BYTES, 25_769_803_776.0),
-                gauge(names::MACMON_MEMORY_SWAP_USED_BYTES, 2_602_434_560.0),
-                gauge(names::MACMON_MEMORY_SWAP_TOTAL_BYTES, 4_294_967_296.0),
+                gauge(names::MACMON_MEMORY_RAM_USED_BYTES, 20_985.479168),
+                gauge(names::MACMON_MEMORY_RAM_TOTAL_BYTES, 25_769.803776),
+                gauge(names::MACMON_MEMORY_SWAP_USED_BYTES, 2_602.434_56),
+                gauge(names::MACMON_MEMORY_SWAP_TOTAL_BYTES, 4_294.967296),
                 gauge(names::MACMON_CPU_POWER_WATTS, 0.20486385),
                 gauge(names::MACMON_GPU_POWER_WATTS, 0.017451683),
                 gauge(names::MACMON_ANE_POWER_WATTS, 0.0),
@@ -152,6 +157,9 @@ mod tests {
         assert!(value["timestamp"].as_str().unwrap().ends_with('Z'));
         assert_eq!(value["temp"]["cpu_temp_avg"], 43.73614);
         assert_eq!(value["memory"]["ram_total"], 25_769_803_776_u64);
+        assert_eq!(value["memory"]["ram_usage"], 20_985_479_168_u64);
+        assert_eq!(value["memory"]["swap_total"], 4_294_967_296_u64);
+        assert_eq!(value["memory"]["swap_usage"], 2_602_434_560_u64);
         assert_eq!(value["ecpu_usage"][0], 1181.0);
         assert_eq!(value["ecpu_usage"][1], 0.082656614);
         assert_eq!(value["cpu_power"], 0.20486385);

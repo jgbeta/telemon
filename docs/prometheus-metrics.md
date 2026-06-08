@@ -173,8 +173,9 @@ default `honor_labels: false`, conflicting scraped labels can be renamed to
   guaranteed and are not part of the stable baseline.
 - The optional `macos_macmon` collector uses the `macmon` Rust library directly
   on Apple Silicon. It keeps `/metrics` fast by scraping cached snapshots from a
-  background sampler thread and does not run a sidecar metrics server. It also
-  exposes `/json` with a valid JSON snapshot shaped like macmon's native model.
+  background sampler thread and does not run a sidecar metrics server. Its
+  Prometheus memory families use decimal MB, while `/json` converts RAM and swap
+  values back to byte integers for the macmon-shaped snapshot.
 - Windows network interface labels use interface aliases and indexes. Use `collectors.windows_baseline.network_interface_allowlist` or `network_interface_denylist` if a host exposes noisy virtual adapters.
 - `info_device_id` and `info_build_info` can overlap with registry target
   labels. Prefer registry labels for dashboard filters.

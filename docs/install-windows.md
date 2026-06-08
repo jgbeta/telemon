@@ -7,7 +7,7 @@ Windows support currently uses the PowerShell service installer. MSI packaging i
 Build a Windows release binary on Windows:
 
 ```powershell
-cargo build --release
+cargo build --release -p telemon-exporter
 ```
 
 ## Install

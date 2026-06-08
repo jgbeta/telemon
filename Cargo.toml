@@ -7,6 +7,9 @@ members = [
   "crates/telemon-exporter",
   "crates/telemon-registry",
 ]
+exclude = [
+  "vendor/macmon-lite",
+]
 
 [workspace.package]
 version = "0.1.0"

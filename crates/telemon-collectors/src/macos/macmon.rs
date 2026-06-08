@@ -529,6 +529,50 @@ fn normalize_bytes_pair(
     (total, used)
 }
 
+#[cfg(any(
+    test,
+    all(target_os = "macos", target_arch = "aarch64", feature = "macos-macmon")
+))]
+fn combined_cpu_usage_ratio(
+    efficiency_ratio: Option<f64>,
+    performance_ratio: Option<f64>,
+    static_info: &MacmonStaticInfo,
+) -> Option<f64> {
+    let mut weighted_usage = 0.0;
+    let mut weighted_cores = 0.0;
+    let mut unweighted_usage = 0.0;
+    let mut unweighted_count = 0.0;
+
+    for (ratio, cores) in [
+        (efficiency_ratio, static_info.efficiency_cpu_cores),
+        (performance_ratio, static_info.performance_cpu_cores),
+    ] {
+        let Some(ratio) = ratio else {
+            continue;
+        };
+        if !ratio.is_finite() {
+            return None;
+        }
+
+        unweighted_usage += ratio;
+        unweighted_count += 1.0;
+
+        if cores > 0 {
+            let cores = f64::from(cores);
+            weighted_usage += ratio * cores;
+            weighted_cores += cores;
+        }
+    }
+
+    if weighted_cores > 0.0 {
+        Some(weighted_usage / weighted_cores)
+    } else if unweighted_count > 0.0 {
+        Some(unweighted_usage / unweighted_count)
+    } else {
+        None
+    }
+}
+
 fn count_invalid(invalid_counts: &mut BTreeMap<String, u64>, field: &'static str) {
     *invalid_counts.entry(field.to_string()).or_insert(0) += 1;
 }
@@ -1021,17 +1065,29 @@ mod platform {
                 .get_metrics(duration)
                 .map_err(|error| anyhow::anyhow!("{error}"))?;
             let static_info = static_info_from_soc(self.sampler.get_soc_info());
-            Ok((raw_snapshot_from_metrics(metrics), static_info))
+            Ok((
+                raw_snapshot_from_metrics(metrics, &static_info),
+                static_info,
+            ))
         }
     }
 
-    fn raw_snapshot_from_metrics(metrics: macmon::Metrics) -> RawMacmonSnapshot {
+    fn raw_snapshot_from_metrics(
+        metrics: macmon::Metrics,
+        static_info: &MacmonStaticInfo,
+    ) -> RawMacmonSnapshot {
+        let efficiency_cpu_utilization_ratio = Some(f64::from(metrics.ecpu_usage.1));
+        let performance_cpu_utilization_ratio = Some(f64::from(metrics.pcpu_usage.1));
         RawMacmonSnapshot {
             cpu_temperature_celsius: Some(f64::from(metrics.temp.cpu_temp_avg)),
             gpu_temperature_celsius: Some(f64::from(metrics.temp.gpu_temp_avg)),
-            cpu_usage_ratio: Some(f64::from(metrics.cpu_usage_pct)),
-            efficiency_cpu_utilization_ratio: Some(f64::from(metrics.ecpu_usage.1)),
-            performance_cpu_utilization_ratio: Some(f64::from(metrics.pcpu_usage.1)),
+            cpu_usage_ratio: super::combined_cpu_usage_ratio(
+                efficiency_cpu_utilization_ratio,
+                performance_cpu_utilization_ratio,
+                static_info,
+            ),
+            efficiency_cpu_utilization_ratio,
+            performance_cpu_utilization_ratio,
             efficiency_cpu_clock_mhz: Some(f64::from(metrics.ecpu_usage.0)),
             performance_cpu_clock_mhz: Some(f64::from(metrics.pcpu_usage.0)),
             gpu_utilization_ratio: Some(f64::from(metrics.gpu_usage.1)),
@@ -1152,6 +1208,45 @@ mod tests {
                 .invalid_counts
                 .get("performance_cpu_utilization_ratio"),
             Some(&1)
+        );
+    }
+
+    #[test]
+    fn combines_cluster_cpu_usage_by_core_count() {
+        let info = MacmonStaticInfo {
+            efficiency_cpu_cores: 4,
+            performance_cpu_cores: 6,
+            ..MacmonStaticInfo::default()
+        };
+
+        assert_eq!(
+            combined_cpu_usage_ratio(Some(0.25), Some(0.75), &info),
+            Some(0.55)
+        );
+    }
+
+    #[test]
+    fn combined_cpu_usage_skips_missing_clusters() {
+        let info = MacmonStaticInfo {
+            efficiency_cpu_cores: 4,
+            performance_cpu_cores: 6,
+            ..MacmonStaticInfo::default()
+        };
+
+        assert_eq!(
+            combined_cpu_usage_ratio(Some(0.25), None, &info),
+            Some(0.25)
+        );
+        assert_eq!(combined_cpu_usage_ratio(None, None, &info), None);
+    }
+
+    #[test]
+    fn combined_cpu_usage_averages_when_core_counts_are_missing() {
+        let info = MacmonStaticInfo::default();
+
+        assert_eq!(
+            combined_cpu_usage_ratio(Some(0.25), Some(0.75), &info),
+            Some(0.5)
         );
     }
 

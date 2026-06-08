@@ -35,10 +35,10 @@ metric,hw_macmon_gpu_usage_ratio,gauge,/metrics,macos_macmon,chip?,GPU utilizati
 metric,hw_macmon_ecpu_freq_mhz,gauge,/metrics,macos_macmon,chip?,Efficiency CPU cluster frequency in MHz from macmon.
 metric,hw_macmon_pcpu_freq_mhz,gauge,/metrics,macos_macmon,chip?,Performance CPU cluster frequency in MHz from macmon.
 metric,hw_macmon_gpu_freq_mhz,gauge,/metrics,macos_macmon,chip?,GPU frequency in MHz from macmon.
-metric,sys_macmon_ram_used_mb,gauge,/metrics,macos_macmon,chip?,RAM usage in decimal MB from macmon.
-metric,sys_macmon_ram_total_mb,gauge,/metrics,macos_macmon,chip?,Total RAM in decimal MB from macmon.
-metric,sys_macmon_swap_used_mb,gauge,/metrics,macos_macmon,chip?,Swap usage in decimal MB from macmon.
-metric,sys_macmon_swap_total_mb,gauge,/metrics,macos_macmon,chip?,Total swap in decimal MB from macmon.
+metric,sys_macmon_ram_used_mb,gauge,/metrics,macos_macmon,chip?,RAM usage in decimal MB from macmon; /json returns bytes.
+metric,sys_macmon_ram_total_mb,gauge,/metrics,macos_macmon,chip?,Total RAM in decimal MB from macmon; /json returns bytes.
+metric,sys_macmon_swap_used_mb,gauge,/metrics,macos_macmon,chip?,Swap usage in decimal MB from macmon; /json returns bytes.
+metric,sys_macmon_swap_total_mb,gauge,/metrics,macos_macmon,chip?,Total swap in decimal MB from macmon; /json returns bytes.
 metric,sys_uptime_s,gauge,/metrics,system;windows_baseline,source,System uptime in seconds.
 metric,sys_cpu_count,gauge,/metrics/static,system,source,Logical CPU count.
 metric,sys_cpu_usage_ratio,gauge,/metrics,system;windows_baseline;macos_macmon,source;component?,Total system CPU usage ratio from 0 to 1; may be omitted until a reliable delta sample is available.

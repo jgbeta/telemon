@@ -13,6 +13,12 @@ Port:    9185/tcp
 
 The first install copies `packaging\windows\config.default.yml` to `C:\ProgramData\Telemon\exporter.yml`. Later installs preserve the existing config.
 
+Build the exporter first:
+
+```powershell
+cargo build --release -p telemon-exporter
+```
+
 Install from an Administrator PowerShell:
 
 ```powershell

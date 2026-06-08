@@ -126,10 +126,10 @@ IP.
 
 When `macos_macmon` is enabled on Apple Silicon in both the binary feature set
 and the config file, confirm
-`exporter_collector_up{collector="macos_macmon"} 1`, look for `macmon_*`
-temperature, power, clock, utilization, and memory metrics, and verify `/json`
-returns valid JSON. If the collector reports `0`, check
-`/Library/Logs/Telemon/exporter.err.log`.
+`info_collector_up{collector="macos_macmon"} 1`, look for `hw_macmon_*`,
+`sys_macmon_*`, and `sys_cpu_freq_mhz{source="macmon"}` rows, and verify
+`/json` returns valid JSON with RAM and swap values as bytes. If the collector
+reports `0`, check `/Library/Logs/Telemon/exporter.err.log`.
 
 From the Prometheus server:
 

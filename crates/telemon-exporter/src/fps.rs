@@ -5,7 +5,9 @@ use std::path::{Path, PathBuf};
 use std::time::{Duration, Instant, SystemTime, UNIX_EPOCH};
 
 use tokio::sync::watch;
-use tracing::{debug, warn};
+#[cfg(target_os = "linux")]
+use tracing::debug;
+use tracing::warn;
 
 use crate::cache::SharedMetricCache;
 #[cfg(target_os = "linux")]
@@ -27,7 +29,9 @@ const GAMESCOPE_FRAME_SOURCE: &str = "gamescope_mangoapp";
 const MANGOHUD_LOG_SOURCE: &str = "mangohud_log";
 const FRAME_SOURCE_QUEUE_NOT_APPLICABLE: &str = "not_applicable";
 const FRAME_SOURCE_QUEUE_UNAVAILABLE: &str = "unavailable";
+#[cfg(target_os = "linux")]
 const FRAME_SOURCE_QUEUE_BLOCKED: &str = "blocked_competing_consumer";
+#[cfg(target_os = "linux")]
 const FRAME_SOURCE_QUEUE_DESTRUCTIVE_READ_DISABLED: &str = "destructive_read_disabled";
 const FRAME_SOURCE_UP_STALE_AFTER: Duration = Duration::from_secs(2);
 const MANGOHUD_LOG_DISCOVERY_INTERVAL: Duration = Duration::from_secs(1);
@@ -341,7 +345,9 @@ struct GameFpsRuntime {
     source_health: BTreeMap<FrameSourceKind, FrameSourceHealth>,
     mangohud_log_tail: MangoHudLogTail,
     start: Instant,
+    #[cfg(target_os = "linux")]
     last_wayland_open_attempt: Option<Instant>,
+    #[cfg(target_os = "linux")]
     last_mangoapp_open_attempt: Option<Instant>,
     #[cfg(target_os = "linux")]
     wayland_reader: Option<GamescopeWaylandFrameReader>,
@@ -403,7 +409,9 @@ impl GameFpsRuntime {
             source_health,
             mangohud_log_tail: MangoHudLogTail::default(),
             start: Instant::now(),
+            #[cfg(target_os = "linux")]
             last_wayland_open_attempt: None,
+            #[cfg(target_os = "linux")]
             last_mangoapp_open_attempt: None,
             #[cfg(target_os = "linux")]
             wayland_reader: None,

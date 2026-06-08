@@ -63,8 +63,9 @@ tail -n 100 /Library/Logs/Telemon/exporter.err.log
 With a `--features macos-macmon` build and `collectors.macos_macmon.enabled: true` on Apple Silicon, confirm:
 
 ```bash
-curl http://127.0.0.1:9185/metrics | grep 'macos_macmon\\|source="macmon"'
-curl http://127.0.0.1:9185/metrics | grep 'macmon_'
+curl http://127.0.0.1:9185/metrics | grep 'info_collector_up{collector="macos_macmon"} 1'
+curl http://127.0.0.1:9185/metrics | grep 'hw_macmon_\\|sys_macmon_'
+curl http://127.0.0.1:9185/metrics | grep 'sys_cpu_freq_mhz.*source="macmon"'
 curl http://127.0.0.1:9185/json
 curl http://127.0.0.1:9185/metrics/static | grep 'source="macmon"'
 ```
