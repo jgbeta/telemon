@@ -2,11 +2,14 @@
 
 The macOS installer runs `telemon-exporter` as a LaunchDaemon with the macOS
 baseline collectors enabled by default: system uptime, memory, CPU count, and
-public macOS thermal pressure state. Numeric Apple Silicon telemetry is
-available through the optional disabled `macos_macmon` collector, which uses the
-`macmon` Rust library directly for average CPU/GPU temperature, power, clocks,
-utilization, memory, swap, and SoC metadata. Build the exporter with the
-`macos-macmon` Cargo feature before enabling this collector in YAML.
+public macOS thermal pressure state. Fresh configs also enable numeric Apple
+Silicon telemetry through `macos_macmon`, which uses the `macmon` Rust library
+directly for average CPU/GPU temperature, power, clocks, utilization, memory,
+swap, and SoC metadata. Build the exporter with the `macos-macmon` Cargo feature
+to emit real macmon telemetry; otherwise this collector reports unsupported. The
+macmon collector filters only impossible CPU/GPU temperature artifacts below 10C
+by default; set `collectors.macos_macmon.temperature_plausibility_filter.enabled:
+false` when capturing raw cold-start behavior.
 
 Default paths:
 
@@ -60,7 +63,7 @@ tail -n 100 /Library/Logs/Telemon/exporter.log
 tail -n 100 /Library/Logs/Telemon/exporter.err.log
 ```
 
-With a `--features macos-macmon` build and `collectors.macos_macmon.enabled: true` on Apple Silicon, confirm:
+With a `--features macos-macmon` build on Apple Silicon, confirm:
 
 ```bash
 curl http://127.0.0.1:9185/metrics | grep 'info_collector_up{collector="macos_macmon"} 1'

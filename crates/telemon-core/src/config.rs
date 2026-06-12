@@ -162,6 +162,13 @@ pub struct MacosMacmonConfig {
     pub min_temperature_celsius: f64,
     pub max_temperature_celsius: f64,
     pub max_power_watts: f64,
+    pub temperature_plausibility_filter: MacosMacmonTemperaturePlausibilityFilterConfig,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(default)]
+pub struct MacosMacmonTemperaturePlausibilityFilterConfig {
+    pub enabled: bool,
 }
 
 #[derive(Debug, Clone, Default, Serialize, Deserialize)]
@@ -817,7 +824,7 @@ fn default_macos_thermal_state_enabled() -> bool {
 impl Default for MacosMacmonConfig {
     fn default() -> Self {
         Self {
-            enabled: false,
+            enabled: true,
             sample_interval_seconds: 1,
             sample_window_milliseconds: 1000,
             stale_after_seconds: 5,
@@ -825,7 +832,15 @@ impl Default for MacosMacmonConfig {
             min_temperature_celsius: 1.0,
             max_temperature_celsius: 130.0,
             max_power_watts: 300.0,
+            temperature_plausibility_filter:
+                MacosMacmonTemperaturePlausibilityFilterConfig::default(),
         }
+    }
+}
+
+impl Default for MacosMacmonTemperaturePlausibilityFilterConfig {
+    fn default() -> Self {
+        Self { enabled: true }
     }
 }
 
@@ -1294,7 +1309,7 @@ mod tests {
             config.collectors.macos_thermal_state.enabled,
             cfg!(target_os = "macos")
         );
-        assert!(!config.collectors.macos_macmon.enabled);
+        assert!(config.collectors.macos_macmon.enabled);
         assert_eq!(config.collectors.macos_macmon.sample_interval_seconds, 1);
         assert_eq!(
             config.collectors.macos_macmon.sample_window_milliseconds,
@@ -1309,9 +1324,37 @@ mod tests {
             5
         );
         assert!(
+            config
+                .collectors
+                .macos_macmon
+                .temperature_plausibility_filter
+                .enabled
+        );
+        assert!(
             !config
                 .collectors
                 .macos_exact_temperature_experimental
+                .enabled
+        );
+    }
+
+    #[test]
+    fn parses_disabled_macos_macmon_temperature_plausibility_filter() {
+        let config: AppConfig = serde_yaml::from_str(
+            r#"
+collectors:
+  macos_macmon:
+    temperature_plausibility_filter:
+      enabled: false
+"#,
+        )
+        .unwrap();
+
+        assert!(
+            !config
+                .collectors
+                .macos_macmon
+                .temperature_plausibility_filter
                 .enabled
         );
     }

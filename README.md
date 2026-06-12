@@ -60,27 +60,3 @@ first GitHub publish. See `docs/github-ghcr.md`.
 The current Prometheus metric catalog is documented in
 `docs/prometheus-metrics.md` and `docs/prometheus-metrics.csv`.
 For clean removal and fresh reinstall testing, see `docs/uninstall.md`.
-
-## Scope
-
-Implemented through phase 4:
-
-- CLI, YAML config validation, and logging.
-- Prometheus text metrics, cache, scheduler, and HTTP endpoints.
-- Linux `/sys/class/hwmon` temperature collection, including sysfs-only NVMe drive identity labels and namespace capacity metrics.
-- NVIDIA NVML GPU collection with dynamic runtime loading.
-- Docker Compose hub, Prometheus, and Grafana stack.
-- UUID-based client registration and Prometheus HTTP service discovery.
-- Device-level adaptive scrape interval signaling and split dynamic/static
-  metric endpoints.
-- Dockerized Linux exporter path for servers, NAS boxes, and container-first
-  Unraid installs.
-- Production and side-by-side validation Docker exporter compose files.
-- Linux systemd packaging scripts, Windows service skeleton, and macOS LaunchDaemon skeleton.
-- Versioned release artifact generation and a Linux bootstrap installer for unsupported distributions and quick homelab installs.
-- Public GHCR image workflow for `telemon-exporter` and `telemon-hub`.
-- Read-only debug bundle script.
-
-Out of scope for the current implementation:
-
-- AMD ADLX, Intel GPU collection, fan control, clock control, power control, BIOS access, TLS, authentication, remote write.

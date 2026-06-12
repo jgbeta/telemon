@@ -14,6 +14,8 @@ use telemon_core::metrics::names;
 pub const COLLECTOR_NAME: &str = "macos_macmon";
 pub const SOURCE: &str = "macmon";
 
+const TEMPERATURE_PLAUSIBILITY_MIN_CELSIUS: f64 = 10.0;
+
 #[derive(Debug, Clone, Default, PartialEq)]
 pub struct RawMacmonSnapshot {
     pub cpu_temperature_celsius: Option<f64>,
@@ -246,6 +248,7 @@ fn sampler_loop(config: MacosMacmonConfig, cache: Arc<Mutex<MacmonCache>>) {
                     normalized.snapshot,
                     static_info,
                     normalized.invalid_counts,
+                    &config,
                 );
             }
             Err(error) => {
@@ -265,11 +268,16 @@ fn sampler_loop(config: MacosMacmonConfig, cache: Arc<Mutex<MacmonCache>>) {
 
 fn record_success(
     cache: &Arc<Mutex<MacmonCache>>,
-    snapshot: MacmonSnapshot,
+    mut snapshot: MacmonSnapshot,
     static_info: MacmonStaticInfo,
-    invalid_counts: BTreeMap<String, u64>,
+    mut invalid_counts: BTreeMap<String, u64>,
+    config: &MacosMacmonConfig,
 ) {
     update_cache(cache, |cache| {
+        if config.temperature_plausibility_filter.enabled {
+            apply_temperature_plausibility_filter(&mut snapshot, &mut invalid_counts);
+        }
+
         cache.latest = Some(CachedSnapshot {
             snapshot,
             captured_at: Instant::now(),
@@ -455,6 +463,26 @@ fn normalize_temperature(
     }
 }
 
+fn apply_temperature_plausibility_filter(
+    snapshot: &mut MacmonSnapshot,
+    invalid_counts: &mut BTreeMap<String, u64>,
+) {
+    if snapshot
+        .cpu_temperature_celsius
+        .is_some_and(|value| value < TEMPERATURE_PLAUSIBILITY_MIN_CELSIUS)
+    {
+        snapshot.cpu_temperature_celsius = None;
+        count_invalid(invalid_counts, "cpu_temperature_celsius");
+    }
+
+    if snapshot
+        .gpu_temperature_celsius
+        .is_some_and(|value| value < TEMPERATURE_PLAUSIBILITY_MIN_CELSIUS)
+    {
+        snapshot.gpu_temperature_celsius = None;
+        count_invalid(invalid_counts, "gpu_temperature_celsius");
+    }
+}
 fn normalize_ratio(
     field: &'static str,
     value: Option<f64>,
@@ -1156,7 +1184,27 @@ mod tests {
             min_temperature_celsius: 1.0,
             max_temperature_celsius: 130.0,
             max_power_watts: 300.0,
+            temperature_plausibility_filter:
+                telemon_core::config::MacosMacmonTemperaturePlausibilityFilterConfig::default(),
         }
+    }
+
+    fn filter_temperatures(
+        cpu_temperature_celsius: Option<f64>,
+        gpu_temperature_celsius: Option<f64>,
+    ) -> (Option<f64>, Option<f64>, BTreeMap<String, u64>) {
+        let mut snapshot = MacmonSnapshot {
+            cpu_temperature_celsius,
+            gpu_temperature_celsius,
+            ..MacmonSnapshot::default()
+        };
+        let mut invalid_counts = BTreeMap::new();
+        apply_temperature_plausibility_filter(&mut snapshot, &mut invalid_counts);
+        (
+            snapshot.cpu_temperature_celsius,
+            snapshot.gpu_temperature_celsius,
+            invalid_counts,
+        )
     }
 
     fn metric_value(
@@ -1265,6 +1313,122 @@ mod tests {
             normalized.invalid_counts.get("gpu_temperature_celsius"),
             Some(&1)
         );
+    }
+
+    #[test]
+    fn temperature_plausibility_filter_accepts_warm_values() {
+        let (cpu, gpu, invalid_counts) = filter_temperatures(Some(35.0), Some(35.0));
+
+        assert_eq!(cpu, Some(35.0));
+        assert_eq!(gpu, Some(35.0));
+        assert!(invalid_counts.is_empty());
+    }
+
+    #[test]
+    fn temperature_plausibility_filter_rejects_cpu_below_cutoff() {
+        let (cpu, gpu, invalid_counts) = filter_temperatures(Some(9.99), Some(31.4));
+
+        assert_eq!(cpu, None);
+        assert_eq!(gpu, Some(31.4));
+        assert_eq!(invalid_counts.get("cpu_temperature_celsius"), Some(&1));
+    }
+
+    #[test]
+    fn temperature_plausibility_filter_rejects_gpu_below_cutoff() {
+        for value in [9.2, 6.0, 5.13] {
+            let (cpu, gpu, invalid_counts) = filter_temperatures(Some(35.0), Some(value));
+
+            assert_eq!(cpu, Some(35.0));
+            assert_eq!(gpu, None);
+            assert_eq!(invalid_counts.get("gpu_temperature_celsius"), Some(&1));
+        }
+    }
+
+    #[test]
+    fn temperature_plausibility_filter_accepts_cutoff_boundary() {
+        let (cpu, gpu, invalid_counts) = filter_temperatures(Some(10.0), Some(10.0));
+
+        assert_eq!(cpu, Some(10.0));
+        assert_eq!(gpu, Some(10.0));
+        assert!(invalid_counts.is_empty());
+    }
+
+    #[test]
+    fn temperature_plausibility_filter_accepts_observed_cold_m4_values() {
+        let (cpu, gpu, invalid_counts) = filter_temperatures(Some(19.5), Some(14.4));
+
+        assert_eq!(cpu, Some(19.5));
+        assert_eq!(gpu, Some(14.4));
+        assert!(invalid_counts.is_empty());
+    }
+
+    #[test]
+    fn temperature_plausibility_filter_accepts_large_delta_above_cutoff() {
+        let (cpu, gpu, invalid_counts) = filter_temperatures(Some(45.0), Some(12.0));
+
+        assert_eq!(cpu, Some(45.0));
+        assert_eq!(gpu, Some(12.0));
+        assert!(invalid_counts.is_empty());
+    }
+
+    #[test]
+    fn temperature_plausibility_filter_accepts_large_drop_above_cutoff() {
+        let cache = Arc::new(Mutex::new(MacmonCache::default()));
+        let config = test_config();
+
+        record_success(
+            &cache,
+            MacmonSnapshot {
+                cpu_temperature_celsius: Some(60.0),
+                gpu_temperature_celsius: Some(40.0),
+                ..MacmonSnapshot::default()
+            },
+            MacmonStaticInfo::default(),
+            BTreeMap::new(),
+            &config,
+        );
+        record_success(
+            &cache,
+            MacmonSnapshot {
+                cpu_temperature_celsius: Some(19.5),
+                gpu_temperature_celsius: Some(14.4),
+                ..MacmonSnapshot::default()
+            },
+            MacmonStaticInfo::default(),
+            BTreeMap::new(),
+            &config,
+        );
+
+        let cache = cache.lock().unwrap();
+        let snapshot = &cache.latest.as_ref().unwrap().snapshot;
+        assert_eq!(snapshot.cpu_temperature_celsius, Some(19.5));
+        assert_eq!(snapshot.gpu_temperature_celsius, Some(14.4));
+        assert!(cache.invalid_samples_total.is_empty());
+    }
+
+    #[test]
+    fn disabled_temperature_plausibility_filter_keeps_low_values() {
+        let cache = Arc::new(Mutex::new(MacmonCache::default()));
+        let mut config = test_config();
+        config.temperature_plausibility_filter.enabled = false;
+
+        record_success(
+            &cache,
+            MacmonSnapshot {
+                cpu_temperature_celsius: Some(5.13),
+                gpu_temperature_celsius: Some(9.2),
+                ..MacmonSnapshot::default()
+            },
+            MacmonStaticInfo::default(),
+            BTreeMap::new(),
+            &config,
+        );
+
+        let cache = cache.lock().unwrap();
+        let snapshot = &cache.latest.as_ref().unwrap().snapshot;
+        assert_eq!(snapshot.cpu_temperature_celsius, Some(5.13));
+        assert_eq!(snapshot.gpu_temperature_celsius, Some(9.2));
+        assert!(cache.invalid_samples_total.is_empty());
     }
 
     #[test]

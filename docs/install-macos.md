@@ -5,12 +5,10 @@ supported macOS baseline: registration, Prometheus scrape visibility, system
 uptime/memory/CPU count, and public macOS thermal pressure state.
 
 The stable macOS baseline signal for thermal health is public thermal pressure
-state. Numeric Apple Silicon telemetry is optional through
-`collectors.macos_macmon`, which uses the `macmon` Rust library directly. It is
-disabled in the packaged default config until you intentionally enable it for
-Apple Silicon validation. The binary must also be built with the
-`macos-macmon` Cargo feature; otherwise the collector reports unsupported even
-if the YAML flag is set.
+state. Numeric Apple Silicon telemetry is enabled in fresh configs through
+`collectors.macos_macmon`, which uses the `macmon` Rust library directly. The
+binary must also be built with the `macos-macmon` Cargo feature; otherwise the
+collector reports unsupported even if the YAML flag is set.
 
 ## Build
 
@@ -44,14 +42,21 @@ When creating a new config, the installer copies
 `packaging/macos/config.default.yml`. Re-running the installer updates the
 binary and service file but preserves existing config edits.
 
-To test Apple Silicon macmon telemetry, first install a binary built with
-`--features macos-macmon`. After install, edit
-`/Library/Application Support/Telemon/exporter.yml` and set:
+To test Apple Silicon macmon telemetry, install a binary built with
+`--features macos-macmon`. Fresh configs enable `collectors.macos_macmon` by
+default. Re-running the installer preserves existing YAML, so older installs may
+still need `collectors.macos_macmon.enabled: true` in
+`/Library/Application Support/Telemon/exporter.yml`.
+
+The macmon collector filters only impossible CPU/GPU temperature artifacts below
+10C by default. To capture raw cold-start temperature behavior, temporarily
+disable it:
 
 ```yaml
 collectors:
   macos_macmon:
-    enabled: true
+    temperature_plausibility_filter:
+      enabled: false
 ```
 
 Then restart the service with `sudo launchctl kickstart -k system/com.telemon.exporter`.

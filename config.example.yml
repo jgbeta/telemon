@@ -58,7 +58,7 @@ collectors:
     enabled: true
 
   macos_macmon:
-    enabled: false
+    enabled: true
     sample_interval_seconds: 1
     sample_window_milliseconds: 1000
     stale_after_seconds: 5
@@ -66,6 +66,8 @@ collectors:
     min_temperature_celsius: 1
     max_temperature_celsius: 130
     max_power_watts: 300
+    temperature_plausibility_filter:
+      enabled: true
 
   macos_exact_temperature_experimental:
     enabled: false
