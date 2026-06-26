@@ -137,6 +137,12 @@ if [ ! -f "$DEFAULT_CONFIG" ]; then
   exit 1
 fi
 
+set_config_permissions() {
+  [ -f "$CONFIG_FILE" ] || return 0
+  chown root:wheel "$CONFIG_FILE"
+  chmod 0600 "$CONFIG_FILE"
+}
+
 verify_launchdaemon_binary() {
   local expected="$INSTALL_DIR/telemon-exporter"
 
@@ -381,11 +387,12 @@ install -m 0755 "$SOURCE_BINARY" "$INSTALL_DIR/telemon-exporter"
 prompt_registration_config
 
 if [ ! -f "$CONFIG_FILE" ]; then
-  install -m 0644 "$DEFAULT_CONFIG" "$CONFIG_FILE"
-  chmod 0644 "$CONFIG_FILE"
+  install -m 0600 "$DEFAULT_CONFIG" "$CONFIG_FILE"
 fi
+set_config_permissions
 ensure_registration_config_shape
 configure_registration_config
+set_config_permissions
 
 install -m 0644 "$SCRIPT_DIR/com.telemon.exporter.plist" "$PLIST"
 chown root:wheel "$PLIST"

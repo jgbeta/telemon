@@ -31,7 +31,7 @@ install -m 0755 packaging/linux/deb/postinst "$ROOT/DEBIAN/postinst"
 install -m 0755 packaging/linux/deb/prerm "$ROOT/DEBIAN/prerm"
 install -m 0755 packaging/linux/deb/postrm "$ROOT/DEBIAN/postrm"
 
-install -m 0644 config.example.yml "$ROOT/etc/telemon/exporter.yml"
+install -m 0640 config.example.yml "$ROOT/etc/telemon/exporter.yml"
 sed -i 's/listen: "127.0.0.1:9185"/listen: "0.0.0.0:9185"/' "$ROOT/etc/telemon/exporter.yml"
 install -m 0644 packaging/linux/telemon-exporter.service \
   "$ROOT/lib/systemd/system/telemon-exporter.service"

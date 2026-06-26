@@ -38,6 +38,11 @@ warn() {
   printf '[telemon-steamdeck] warning: %s\n' "$*" >&2
 }
 
+set_config_permissions() {
+  [ -f "$CONFIG_FILE" ] || return 0
+  chmod 0600 "$CONFIG_FILE" 2>/dev/null || true
+}
+
 die() {
   printf '[telemon-steamdeck] error: %s\n' "$*" >&2
   exit 1
@@ -396,6 +401,7 @@ write_config() {
 
   if [ -f "$CONFIG_FILE" ] && [ "$FORCE_CONFIG" != true ]; then
     log "preserving existing config: $CONFIG_FILE"
+    set_config_permissions
     if [ -n "$REGISTRY_SERVER" ] || [ -n "$ENROLLMENT_TOKEN" ] || [ -n "$MACHINE_UUID" ] || [ -n "$ADVERTISED_ADDR" ] || [ "$ENABLE_FPS" = true ]; then
       warn "registration, identity, or FPS options were provided, but existing config was preserved; use --force-config to rewrite it"
     fi
@@ -405,6 +411,7 @@ write_config() {
   if [ -f "$CONFIG_FILE" ]; then
     timestamp="$(date +%Y%m%d-%H%M%S)"
     cp "$CONFIG_FILE" "$CONFIG_FILE.bak-$timestamp"
+    chmod 0600 "$CONFIG_FILE.bak-$timestamp" 2>/dev/null || true
     log "backed up existing config to $CONFIG_FILE.bak-$timestamp"
   fi
 
@@ -597,6 +604,8 @@ diagnostics:
 logging:
   level: "info"
 YAML
+
+  set_config_permissions
 
   if [ "$ENABLE_FPS" = true ]; then
     : > "$HOME/mangoapp"

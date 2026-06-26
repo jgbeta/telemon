@@ -27,6 +27,12 @@ require_root() {
   fi
 }
 
+set_config_permissions() {
+  [ -f "$CONFIG_FILE" ] || return 0
+  chown root:telemon "$CONFIG_FILE" 2>/dev/null || true
+  chmod 0640 "$CONFIG_FILE"
+}
+
 default_user_name() {
   if [ -n "${SUDO_USER:-}" ] && [ "${SUDO_USER:-}" != "root" ]; then
     printf '%s\n' "$SUDO_USER"
@@ -222,7 +228,7 @@ collectors:
 logging:
   level: "info"
 CONFIG
-  chmod 0644 "$CONFIG_FILE"
+  set_config_permissions
 }
 
 ensure_registration_config_shape() {
@@ -458,6 +464,7 @@ main() {
   require_root
   [ -t 0 ] || die "telemon-exporter-setup requires an interactive terminal"
   ensure_registration_config_shape
+  set_config_permissions
   install -d -m 0750 -o telemon -g telemon "$STATE_DIR" 2>/dev/null || install -d -m 0750 "$STATE_DIR"
 
   while true; do
@@ -471,6 +478,7 @@ main() {
   done
 
   write_setup_config
+  set_config_permissions
   configure_ufw_for_prometheus "$PROMETHEUS_IP"
   restart_service
   log "exporter setup complete; the service will enroll or heartbeat with the registry"

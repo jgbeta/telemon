@@ -1,18 +1,26 @@
 use std::collections::BTreeMap;
 use std::fs;
+use std::io::Write;
 use std::net::IpAddr;
-use std::path::Path;
-use std::sync::{Arc, Mutex};
+use std::path::{Path, PathBuf};
+use std::sync::{Arc, Mutex, MutexGuard};
 use std::time::{SystemTime, UNIX_EPOCH};
 
-use anyhow::{bail, Context, Result};
+use anyhow::{Context, Result};
 use serde::{Deserialize, Serialize};
 use tokio::io::{AsyncReadExt, AsyncWriteExt};
 use tokio::net::{TcpListener, TcpStream};
+use tokio::sync::Semaphore;
+use tokio::time::{timeout, Duration};
 use tracing::{debug, info};
 use uuid::Uuid;
 
 use telemon_core::config::{RegistryAppConfig, RegistryConfig};
+
+const MAX_CONCURRENT_CONNECTIONS: usize = 128;
+const REQUEST_HEADER_LIMIT_BYTES: usize = 64 * 1024;
+const REQUEST_BODY_LIMIT_BYTES: usize = 16 * 1024;
+const REQUEST_READ_TIMEOUT_SECONDS: u64 = 5;
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
 pub struct DeviceRecord {
@@ -121,7 +129,7 @@ impl DeviceStore {
             })?;
         }
         let text = serde_json::to_string_pretty(self)?;
-        fs::write(path, text)
+        atomic_write(path, text.as_bytes())
             .with_context(|| format!("failed to write registry store {}", path.display()))
     }
 
@@ -132,7 +140,7 @@ impl DeviceStore {
         now: u64,
     ) -> DeviceRecord {
         let device_uuid = Uuid::new_v4().to_string();
-        let advertised_addr = normalize_advertised_addr(&request.advertised_addr);
+        let advertised_addr = request.advertised_addr;
         let current_ip = target_host(&advertised_addr, &observed_ip);
         let record = DeviceRecord {
             device_uuid: device_uuid.clone(),
@@ -162,7 +170,7 @@ impl DeviceStore {
         now: u64,
     ) -> Option<(DeviceRecord, bool)> {
         let record = self.devices.get_mut(&request.device_uuid)?;
-        let advertised_addr = normalize_advertised_addr(&request.advertised_addr);
+        let advertised_addr = request.advertised_addr;
         let current_ip = target_host(&advertised_addr, &observed_ip);
         let ip_changed = record.current_ip != current_ip;
         let previous_requested_scrape_interval_seconds = record.requested_scrape_interval_seconds;
@@ -211,7 +219,7 @@ impl DeviceStore {
                     .map(|interval| record.requested_scrape_interval_seconds == interval)
                     .unwrap_or(true)
             })
-            .map(device_record_to_target_group)
+            .filter_map(device_record_to_target_group)
             .collect()
     }
 }
@@ -220,6 +228,7 @@ pub async fn run(config: RegistryAppConfig) -> Result<()> {
     let addr = config.listen_addr()?;
     let store = DeviceStore::load(&config.registry.storage_path)?;
     let listener = TcpListener::bind(addr).await?;
+    let connection_permits = Arc::new(Semaphore::new(MAX_CONCURRENT_CONNECTIONS));
     let state = Arc::new(RegistryState {
         config: config.registry,
         store: Arc::new(Mutex::new(store)),
@@ -231,8 +240,16 @@ pub async fn run(config: RegistryAppConfig) -> Result<()> {
         tokio::select! {
             accepted = listener.accept() => {
                 let (stream, _) = accepted?;
+                let Ok(permit) = Arc::clone(&connection_permits).try_acquire_owned() else {
+                    tokio::spawn(async move {
+                        let mut stream = stream;
+                        let _ = write_json_error(&mut stream, 503, "server busy").await;
+                    });
+                    continue;
+                };
                 let state = Arc::clone(&state);
                 tokio::spawn(async move {
+                    let _permit = permit;
                     if let Err(error) = handle_connection(stream, state).await {
                         debug!(%error, "registry request failed");
                     }
@@ -251,7 +268,14 @@ pub async fn run(config: RegistryAppConfig) -> Result<()> {
 
 async fn handle_connection(mut stream: TcpStream, state: Arc<RegistryState>) -> Result<()> {
     let peer_ip = stream.peer_addr()?.ip();
-    let request = read_request(&mut stream).await?;
+    let request = match read_request(&mut stream).await {
+        Ok(request) => request,
+        Err(error) => {
+            let (status, message) = error.response();
+            write_json_error(&mut stream, status, message).await?;
+            return Ok(());
+        }
+    };
 
     match (request.method.as_str(), request.path.as_str()) {
         ("GET", "/healthz") => {
@@ -259,7 +283,7 @@ async fn handle_connection(mut stream: TcpStream, state: Arc<RegistryState>) -> 
         }
         ("GET", "/prometheus/sd") => {
             let groups = {
-                let store = state.store.lock().expect("registry store mutex poisoned");
+                let store = lock_device_store(state.store.as_ref());
                 store.target_groups(
                     state.config.device_stale_after_seconds,
                     unix_timestamp_seconds(),
@@ -274,7 +298,7 @@ async fn handle_connection(mut stream: TcpStream, state: Arc<RegistryState>) -> 
                 return Ok(());
             };
             let groups = {
-                let store = state.store.lock().expect("registry store mutex poisoned");
+                let store = lock_device_store(state.store.as_ref());
                 store.target_groups_for_interval(
                     state.config.device_stale_after_seconds,
                     unix_timestamp_seconds(),
@@ -284,14 +308,23 @@ async fn handle_connection(mut stream: TcpStream, state: Arc<RegistryState>) -> 
             write_json(&mut stream, 200, &groups).await?;
         }
         ("POST", "/api/v1/register") => {
-            let request: RegisterRequest = serde_json::from_slice(&request.body)
-                .context("failed to parse register request")?;
+            let mut request: RegisterRequest = match serde_json::from_slice(&request.body) {
+                Ok(request) => request,
+                Err(_) => {
+                    write_json_error(&mut stream, 400, "failed to parse register request").await?;
+                    return Ok(());
+                }
+            };
             if !token_is_valid(&state.config, &request.enrollment_token) {
                 write_json_error(&mut stream, 401, "invalid enrollment token").await?;
                 return Ok(());
             }
+            if let Err(message) = normalize_request_advertised_addr(&mut request.advertised_addr) {
+                write_json_error(&mut stream, 400, message).await?;
+                return Ok(());
+            }
             let record = {
-                let mut store = state.store.lock().expect("registry store mutex poisoned");
+                let mut store = lock_device_store(state.store.as_ref());
                 let record = store.register(
                     request,
                     observed_ip_label(peer_ip),
@@ -311,14 +344,23 @@ async fn handle_connection(mut stream: TcpStream, state: Arc<RegistryState>) -> 
             .await?;
         }
         ("POST", "/api/v1/heartbeat") => {
-            let request: HeartbeatRequest = serde_json::from_slice(&request.body)
-                .context("failed to parse heartbeat request")?;
+            let mut request: HeartbeatRequest = match serde_json::from_slice(&request.body) {
+                Ok(request) => request,
+                Err(_) => {
+                    write_json_error(&mut stream, 400, "failed to parse heartbeat request").await?;
+                    return Ok(());
+                }
+            };
             if !token_is_valid(&state.config, &request.enrollment_token) {
                 write_json_error(&mut stream, 401, "invalid enrollment token").await?;
                 return Ok(());
             }
+            if let Err(message) = normalize_request_advertised_addr(&mut request.advertised_addr) {
+                write_json_error(&mut stream, 400, message).await?;
+                return Ok(());
+            }
             let heartbeat_result = {
-                let mut store = state.store.lock().expect("registry store mutex poisoned");
+                let mut store = lock_device_store(state.store.as_ref());
                 let result = store.heartbeat(
                     request,
                     observed_ip_label(peer_ip),
@@ -353,7 +395,24 @@ async fn handle_connection(mut stream: TcpStream, state: Arc<RegistryState>) -> 
 }
 
 fn token_is_valid(config: &RegistryConfig, token: &str) -> bool {
-    token == config.enrollment_token
+    constant_time_eq(token.as_bytes(), config.enrollment_token.as_bytes())
+}
+
+fn constant_time_eq(left: &[u8], right: &[u8]) -> bool {
+    let max_len = left.len().max(right.len());
+    let mut diff = left.len() ^ right.len();
+    for index in 0..max_len {
+        let left_byte = left.get(index).copied().unwrap_or(0);
+        let right_byte = right.get(index).copied().unwrap_or(0);
+        diff |= usize::from(left_byte ^ right_byte);
+    }
+    diff == 0
+}
+
+fn lock_device_store(store: &Mutex<DeviceStore>) -> MutexGuard<'_, DeviceStore> {
+    store
+        .lock()
+        .unwrap_or_else(|poisoned| poisoned.into_inner())
 }
 
 struct HttpRequest {
@@ -362,41 +421,90 @@ struct HttpRequest {
     body: Vec<u8>,
 }
 
-async fn read_request(stream: &mut TcpStream) -> Result<HttpRequest> {
+#[derive(Debug)]
+enum RequestReadError {
+    Timeout,
+    PayloadTooLarge,
+    BadRequest(&'static str),
+    Io,
+}
+
+impl RequestReadError {
+    fn response(&self) -> (u16, &'static str) {
+        match self {
+            Self::Timeout => (408, "request timeout"),
+            Self::PayloadTooLarge => (413, "request body too large"),
+            Self::BadRequest(message) => (400, message),
+            Self::Io => (400, "bad request"),
+        }
+    }
+}
+
+async fn read_request(
+    stream: &mut TcpStream,
+) -> std::result::Result<HttpRequest, RequestReadError> {
+    match timeout(
+        Duration::from_secs(REQUEST_READ_TIMEOUT_SECONDS),
+        read_request_inner(stream),
+    )
+    .await
+    {
+        Ok(result) => result,
+        Err(_) => Err(RequestReadError::Timeout),
+    }
+}
+
+async fn read_request_inner(
+    stream: &mut TcpStream,
+) -> std::result::Result<HttpRequest, RequestReadError> {
     let mut buffer = Vec::new();
     let header_end = loop {
         let mut chunk = [0_u8; 4096];
-        let read = stream.read(&mut chunk).await?;
+        let read = stream
+            .read(&mut chunk)
+            .await
+            .map_err(|_| RequestReadError::Io)?;
         if read == 0 {
-            bail!("connection closed before headers");
+            return Err(RequestReadError::BadRequest(
+                "connection closed before headers",
+            ));
         }
         buffer.extend_from_slice(&chunk[..read]);
         if let Some(index) = find_header_end(&buffer) {
             break index;
         }
-        if buffer.len() > 64 * 1024 {
-            bail!("request headers too large");
+        if buffer.len() > REQUEST_HEADER_LIMIT_BYTES {
+            return Err(RequestReadError::BadRequest("request headers too large"));
         }
     };
 
     let headers = String::from_utf8_lossy(&buffer[..header_end]);
     let mut lines = headers.lines();
-    let request_line = lines.next().context("missing request line")?;
+    let request_line = lines
+        .next()
+        .ok_or(RequestReadError::BadRequest("missing request line"))?;
     let mut parts = request_line.split_whitespace();
     let method = parts.next().unwrap_or_default().to_string();
     let path = parts.next().unwrap_or_default().to_string();
-    let content_length = lines
-        .filter_map(|line| line.split_once(':'))
-        .find(|(name, _)| name.eq_ignore_ascii_case("content-length"))
-        .and_then(|(_, value)| value.trim().parse::<usize>().ok())
-        .unwrap_or(0);
+    if method.is_empty() || path.is_empty() {
+        return Err(RequestReadError::BadRequest("invalid request line"));
+    }
+    let content_length = parse_content_length(&headers)?;
+    if content_length > REQUEST_BODY_LIMIT_BYTES {
+        return Err(RequestReadError::PayloadTooLarge);
+    }
 
     let body_start = header_end + 4;
     while buffer.len().saturating_sub(body_start) < content_length {
         let mut chunk = [0_u8; 4096];
-        let read = stream.read(&mut chunk).await?;
+        let read = stream
+            .read(&mut chunk)
+            .await
+            .map_err(|_| RequestReadError::Io)?;
         if read == 0 {
-            bail!("connection closed before body");
+            return Err(RequestReadError::BadRequest(
+                "connection closed before body",
+            ));
         }
         buffer.extend_from_slice(&chunk[..read]);
     }
@@ -406,6 +514,21 @@ async fn read_request(stream: &mut TcpStream) -> Result<HttpRequest> {
         path,
         body: buffer[body_start..body_start + content_length].to_vec(),
     })
+}
+
+fn parse_content_length(headers: &str) -> std::result::Result<usize, RequestReadError> {
+    for line in headers.lines().skip(1) {
+        let Some((name, value)) = line.split_once(':') else {
+            continue;
+        };
+        if name.eq_ignore_ascii_case("content-length") {
+            return value
+                .trim()
+                .parse::<usize>()
+                .map_err(|_| RequestReadError::BadRequest("invalid content-length"));
+        }
+    }
+    Ok(0)
 }
 
 fn find_header_end(buffer: &[u8]) -> Option<usize> {
@@ -439,6 +562,9 @@ async fn write_response(
         400 => "Bad Request",
         401 => "Unauthorized",
         404 => "Not Found",
+        408 => "Request Timeout",
+        413 => "Payload Too Large",
+        503 => "Service Unavailable",
         _ => "OK",
     };
     let response = format!(
@@ -449,8 +575,9 @@ async fn write_response(
     Ok(())
 }
 
-fn device_record_to_target_group(record: &DeviceRecord) -> PrometheusTargetGroup {
-    let target = format_target(record.current_ip.as_str(), record.listen_port);
+fn device_record_to_target_group(record: &DeviceRecord) -> Option<PrometheusTargetGroup> {
+    let target_host = effective_target_host(record)?;
+    let target = format_target(&target_host, record.listen_port);
     let mut labels = BTreeMap::new();
     labels.insert("device_uuid".to_string(), record.device_uuid.clone());
     labels.insert(
@@ -460,7 +587,7 @@ fn device_record_to_target_group(record: &DeviceRecord) -> PrometheusTargetGroup
     labels.insert("device_name".to_string(), record.device_name.clone());
     labels.insert("user_name".to_string(), record.user_name.clone());
     labels.insert("host".to_string(), record.device_name.clone());
-    labels.insert("target_host".to_string(), record.current_ip.clone());
+    labels.insert("target_host".to_string(), target_host);
     labels.insert("os".to_string(), record.os.clone());
     labels.insert("os_version".to_string(), record.os_version.clone());
     labels.insert("arch".to_string(), record.arch.clone());
@@ -469,10 +596,10 @@ fn device_record_to_target_group(record: &DeviceRecord) -> PrometheusTargetGroup
         record.requested_scrape_interval_seconds.to_string(),
     );
 
-    PrometheusTargetGroup {
+    Some(PrometheusTargetGroup {
         targets: vec![target],
         labels,
-    }
+    })
 }
 
 fn format_target(ip: &str, port: u16) -> String {
@@ -483,8 +610,22 @@ fn format_target(ip: &str, port: u16) -> String {
     }
 }
 
-fn normalize_advertised_addr(value: &str) -> String {
-    value.trim().to_string()
+fn normalize_advertised_addr(value: &str) -> std::result::Result<String, &'static str> {
+    let trimmed = value.trim();
+    if trimmed.is_empty() {
+        return Ok(String::new());
+    }
+    if is_valid_target_host(trimmed) {
+        Ok(trimmed.to_string())
+    } else {
+        Err("advertised_addr must be a host name or IP address without a port, scheme, or path")
+    }
+}
+
+fn normalize_request_advertised_addr(value: &mut String) -> std::result::Result<(), &'static str> {
+    let normalized = normalize_advertised_addr(value)?;
+    *value = normalized;
+    Ok(())
 }
 
 fn target_host(advertised_addr: &str, observed_ip: &str) -> String {
@@ -493,6 +634,40 @@ fn target_host(advertised_addr: &str, observed_ip: &str) -> String {
     } else {
         advertised_addr.to_string()
     }
+}
+
+fn effective_target_host(record: &DeviceRecord) -> Option<String> {
+    let candidates = [
+        record.current_ip.trim(),
+        record.advertised_addr.trim(),
+        record.observed_ip.trim(),
+    ];
+    candidates
+        .into_iter()
+        .find(|candidate| is_valid_target_host(candidate))
+        .map(str::to_string)
+}
+
+fn is_valid_target_host(value: &str) -> bool {
+    if value.parse::<IpAddr>().is_ok() {
+        return true;
+    }
+    is_valid_dns_hostname(value)
+}
+
+fn is_valid_dns_hostname(value: &str) -> bool {
+    if value.is_empty() || value.len() > 253 || !value.is_ascii() {
+        return false;
+    }
+    value.split('.').all(|label| {
+        !label.is_empty()
+            && label.len() <= 63
+            && !label.starts_with('-')
+            && !label.ends_with('-')
+            && label
+                .bytes()
+                .all(|byte| byte.is_ascii_alphanumeric() || byte == b'-')
+    })
 }
 
 fn parse_sd_interval(value: &str) -> Option<u64> {
@@ -545,6 +720,75 @@ fn unix_timestamp_seconds() -> u64 {
         .duration_since(UNIX_EPOCH)
         .unwrap_or_default()
         .as_secs()
+}
+
+fn atomic_write(path: &Path, bytes: &[u8]) -> Result<()> {
+    let temp_path = temp_store_path(path);
+    let result = (|| -> Result<()> {
+        let mut file = fs::OpenOptions::new()
+            .create(true)
+            .truncate(true)
+            .write(true)
+            .open(&temp_path)
+            .with_context(|| format!("failed to open temp store {}", temp_path.display()))?;
+        file.write_all(bytes)
+            .with_context(|| format!("failed to write temp store {}", temp_path.display()))?;
+        file.sync_all()
+            .with_context(|| format!("failed to sync temp store {}", temp_path.display()))?;
+        drop(file);
+        replace_file(&temp_path, path)?;
+        sync_parent_dir(path);
+        Ok(())
+    })();
+    if result.is_err() {
+        let _ = fs::remove_file(&temp_path);
+    }
+    result
+}
+
+fn temp_store_path(path: &Path) -> PathBuf {
+    let file_name = path
+        .file_name()
+        .and_then(|value| value.to_str())
+        .unwrap_or("devices.json");
+    path.with_file_name(format!(".{file_name}.tmp-{}", std::process::id()))
+}
+
+fn replace_file(temp_path: &Path, destination: &Path) -> Result<()> {
+    match fs::rename(temp_path, destination) {
+        Ok(()) => Ok(()),
+        Err(_error) if cfg!(windows) && destination.exists() => {
+            fs::remove_file(destination).with_context(|| {
+                format!(
+                    "failed to remove existing registry store {}",
+                    destination.display()
+                )
+            })?;
+            fs::rename(temp_path, destination).with_context(|| {
+                format!(
+                    "failed to rename temp store {} to {}",
+                    temp_path.display(),
+                    destination.display()
+                )
+            })
+        }
+        Err(error) => Err(error).with_context(|| {
+            format!(
+                "failed to rename temp store {} to {}",
+                temp_path.display(),
+                destination.display()
+            )
+        }),
+    }
+}
+
+fn sync_parent_dir(path: &Path) {
+    let Some(parent) = path.parent() else {
+        return;
+    };
+    if let Ok(dir) = fs::File::open(parent) {
+        let _ = dir.sync_all();
+    }
 }
 
 #[cfg(test)]
@@ -634,7 +878,7 @@ mod tests {
             last_seen_timestamp: 100,
         };
 
-        let group = device_record_to_target_group(&record);
+        let group = device_record_to_target_group(&record).unwrap();
 
         assert_eq!(group.targets, vec!["203.0.113.76:9185"]);
         assert_eq!(
@@ -666,7 +910,7 @@ mod tests {
         let mut store = DeviceStore::default();
 
         let record = store.register(request, "198.51.100.1".to_string(), 100);
-        let group = device_record_to_target_group(&record);
+        let group = device_record_to_target_group(&record).unwrap();
 
         assert_eq!(record.observed_ip, "198.51.100.1");
         assert_eq!(record.current_ip, "203.0.113.76");
@@ -675,6 +919,80 @@ mod tests {
             group.labels.get("target_host").map(String::as_str),
             Some("203.0.113.76")
         );
+    }
+
+    #[test]
+    fn advertised_addr_allows_hostnames_and_ip_literals_only() {
+        for value in [
+            "deck",
+            "deck.lan",
+            "telemon-exporter.example.local",
+            "203.0.113.76",
+            "2001:db8::1",
+        ] {
+            assert_eq!(normalize_advertised_addr(value).unwrap(), value);
+        }
+
+        for value in [
+            "http://deck.lan",
+            "deck.lan:9185",
+            "deck.lan/path",
+            "[2001:db8::1]",
+            "bad_host",
+            "-deck.lan",
+            "deck-.lan",
+            "deck lan",
+        ] {
+            assert!(normalize_advertised_addr(value).is_err(), "{value}");
+        }
+    }
+
+    #[test]
+    fn unsafe_legacy_current_ip_falls_back_to_observed_ip() {
+        let record = DeviceRecord {
+            device_uuid: "uuid".to_string(),
+            machine_uuid: "machine".to_string(),
+            user_name: "example-user".to_string(),
+            device_name: "workstation".to_string(),
+            os: "linux".to_string(),
+            os_version: "Linux".to_string(),
+            arch: "x86_64".to_string(),
+            current_ip: "http://attacker.example/path".to_string(),
+            observed_ip: "203.0.113.76".to_string(),
+            advertised_addr: "http://attacker.example/path".to_string(),
+            listen_port: 9185,
+            requested_scrape_interval_seconds: 15,
+            last_seen_timestamp: 100,
+        };
+
+        let group = device_record_to_target_group(&record).unwrap();
+
+        assert_eq!(group.targets, vec!["203.0.113.76:9185"]);
+        assert_eq!(
+            group.labels.get("target_host").map(String::as_str),
+            Some("203.0.113.76")
+        );
+    }
+
+    #[test]
+    fn invalid_legacy_target_without_fallback_is_dropped() {
+        let record = DeviceRecord {
+            device_uuid: "uuid".to_string(),
+            machine_uuid: "machine".to_string(),
+            user_name: "example-user".to_string(),
+            device_name: "workstation".to_string(),
+            os: "linux".to_string(),
+            os_version: "Linux".to_string(),
+            arch: "x86_64".to_string(),
+            current_ip: "http://attacker.example/path".to_string(),
+            observed_ip: String::new(),
+            advertised_addr: String::new(),
+            listen_port: 9185,
+            requested_scrape_interval_seconds: 15,
+            last_seen_timestamp: 100,
+        };
+
+        assert!(device_record_to_target_group(&record).is_none());
     }
 
     #[test]
@@ -689,6 +1007,58 @@ mod tests {
             store.target_groups_for_interval(120, 100, Some(15)).len(),
             0
         );
+    }
+
+    #[test]
+    fn content_length_rejects_invalid_values() {
+        let error =
+            parse_content_length("POST / HTTP/1.1\r\nContent-Length: nope\r\n").unwrap_err();
+        assert!(matches!(
+            error,
+            RequestReadError::BadRequest("invalid content-length")
+        ));
+    }
+
+    #[test]
+    fn token_compare_matches_exact_value_only() {
+        let config = RegistryConfig {
+            enrollment_token: "secret".to_string(),
+            ..RegistryConfig::default()
+        };
+
+        assert!(token_is_valid(&config, "secret"));
+        assert!(!token_is_valid(&config, "Secret"));
+        assert!(!token_is_valid(&config, "secret-extra"));
+        assert!(!token_is_valid(&config, ""));
+    }
+
+    #[test]
+    fn poisoned_store_lock_is_recovered() {
+        let store = Mutex::new(DeviceStore::default());
+        let _ = std::panic::catch_unwind(|| {
+            let _guard = store.lock().unwrap();
+            panic!("poison registry store mutex");
+        });
+
+        let guard = lock_device_store(&store);
+
+        assert!(guard.devices.is_empty());
+    }
+
+    #[test]
+    fn store_save_round_trips_with_atomic_write_path() {
+        let path = std::env::temp_dir().join(format!(
+            "telemon-registry-store-test-{}.json",
+            Uuid::new_v4()
+        ));
+        let mut store = DeviceStore::default();
+        store.register(register_request(), "203.0.113.76".to_string(), 100);
+
+        store.save(&path).unwrap();
+        let loaded = DeviceStore::load(&path).unwrap();
+        let _ = fs::remove_file(&path);
+
+        assert_eq!(loaded.devices.len(), 1);
     }
 
     #[test]

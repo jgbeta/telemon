@@ -3,7 +3,8 @@ use std::sync::Arc;
 use anyhow::Result;
 use tokio::io::{AsyncReadExt, AsyncWriteExt};
 use tokio::net::{TcpListener, TcpStream};
-use tokio::sync::watch;
+use tokio::sync::{watch, Semaphore};
+use tokio::time::{timeout, Duration};
 use tracing::{debug, info};
 
 use crate::cache::{MetricCacheMetadata, SharedMetricCache};
@@ -12,6 +13,9 @@ use crate::macmon_json;
 use crate::runtime_diagnostics::ExporterDiagnostics;
 use telemon_core::config::AppConfig;
 use telemon_core::metrics::encode;
+
+const MAX_CONCURRENT_CONNECTIONS: usize = 128;
+const REQUEST_READ_TIMEOUT_SECONDS: u64 = 5;
 
 #[derive(Clone)]
 struct HttpState {
@@ -38,6 +42,7 @@ pub async fn serve(
 ) -> Result<()> {
     let addr = config.listen_addr()?;
     let listener = TcpListener::bind(addr).await?;
+    let connection_permits = Arc::new(Semaphore::new(MAX_CONCURRENT_CONNECTIONS));
     let state = Arc::new(HttpState {
         dynamic_cache,
         static_cache,
@@ -63,8 +68,22 @@ pub async fn serve(
         tokio::select! {
             accepted = listener.accept() => {
                 let (stream, _) = accepted?;
+                let Ok(permit) = Arc::clone(&connection_permits).try_acquire_owned() else {
+                    tokio::spawn(async move {
+                        let mut stream = stream;
+                        let _ = write_response(
+                            &mut stream,
+                            503,
+                            "text/plain; charset=utf-8",
+                            "server busy\n",
+                        )
+                        .await;
+                    });
+                    continue;
+                };
                 let state = Arc::clone(&state);
                 tokio::spawn(async move {
+                    let _permit = permit;
                     if let Err(error) = handle_connection(stream, state).await {
                         debug!(%error, "http request failed");
                     }
@@ -83,7 +102,24 @@ pub async fn serve(
 
 async fn handle_connection(mut stream: TcpStream, state: Arc<HttpState>) -> Result<()> {
     let mut buffer = [0_u8; 4096];
-    let bytes_read = stream.read(&mut buffer).await?;
+    let bytes_read = match timeout(
+        Duration::from_secs(REQUEST_READ_TIMEOUT_SECONDS),
+        stream.read(&mut buffer),
+    )
+    .await
+    {
+        Ok(result) => result?,
+        Err(_) => {
+            write_response(
+                &mut stream,
+                408,
+                "text/plain; charset=utf-8",
+                "request timeout\n",
+            )
+            .await?;
+            return Ok(());
+        }
+    };
     let request = String::from_utf8_lossy(&buffer[..bytes_read]);
     let Some(request_line) = request.lines().next() else {
         write_response(
@@ -250,6 +286,7 @@ async fn write_response(
         400 => "Bad Request",
         404 => "Not Found",
         405 => "Method Not Allowed",
+        408 => "Request Timeout",
         503 => "Service Unavailable",
         _ => "OK",
     };

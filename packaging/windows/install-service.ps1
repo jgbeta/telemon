@@ -117,11 +117,12 @@ if ($RegistryServer) {
 
 New-Item -ItemType Directory -Force -Path $InstallDir | Out-Null
 New-Item -ItemType Directory -Force -Path $ConfigDir | Out-Null
-New-Item -ItemType Directory -Force -Path (Join-Path $ConfigDir "state") | Out-Null
+$stateDir = Join-Path $ConfigDir "state"
+New-Item -ItemType Directory -Force -Path $stateDir | Out-Null
 
 $targetBinary = Join-Path $InstallDir "telemon-exporter.exe"
 $configPath = Join-Path $ConfigDir "exporter.yml"
-$deviceIdPath = Join-Path $ConfigDir "state\device-id"
+$deviceIdPath = Join-Path $stateDir "device-id"
 Copy-Item -Force -Path $BinaryPath -Destination $targetBinary
 
 if (-not (Test-Path $configPath)) {
@@ -423,6 +424,33 @@ function Assert-TelemonServiceBinaryPath {
     }
 }
 
+
+function Protect-TelemonPaths {
+    param(
+        [string]$ConfigDir,
+        [string]$StateDir,
+        [string]$ConfigPath,
+        [string]$ServiceAclAccount
+    )
+
+    & icacls $ConfigDir /inheritance:r `
+        /grant:r "BUILTIN\Administrators:(OI)(CI)F" `
+        /grant:r "NT AUTHORITY\SYSTEM:(OI)(CI)F" `
+        /grant:r "${ServiceAclAccount}:(OI)(CI)RX" | Out-Null
+
+    & icacls $StateDir /inheritance:r `
+        /grant:r "BUILTIN\Administrators:(OI)(CI)F" `
+        /grant:r "NT AUTHORITY\SYSTEM:(OI)(CI)F" `
+        /grant:r "${ServiceAclAccount}:(OI)(CI)M" | Out-Null
+
+    if (Test-Path $ConfigPath) {
+        & icacls $ConfigPath /inheritance:r `
+            /grant:r "BUILTIN\Administrators:F" `
+            /grant:r "NT AUTHORITY\SYSTEM:F" `
+            /grant:r "${ServiceAclAccount}:R" | Out-Null
+    }
+}
+
 function Start-TelemonServiceBounded {
     param(
         [string]$ServiceName,
@@ -511,9 +539,8 @@ if ($RegistryServer) {
 }
 
 $serviceAccountName = if ($ServiceAccount -eq "LocalSystem") { "LocalSystem" } else { "NT AUTHORITY\LocalService" }
-if ($ServiceAccount -eq "LocalService") {
-    icacls $ConfigDir /grant "NT AUTHORITY\LocalService:(OI)(CI)M" | Out-Null
-}
+$serviceAclAccountName = if ($ServiceAccount -eq "LocalSystem") { "NT AUTHORITY\SYSTEM" } else { "NT AUTHORITY\LocalService" }
+Protect-TelemonPaths -ConfigDir $ConfigDir -StateDir $stateDir -ConfigPath $configPath -ServiceAclAccount $serviceAclAccountName
 
 Write-Host "Validating exporter config"
 $finalConfigValidation = Invoke-ExporterConfigCheck -TargetBinary $targetBinary -ConfigPath $configPath

@@ -54,6 +54,13 @@ firewall_value() {
   awk -F= -v key="$key" '$1 == key { print substr($0, length(key) + 2) }' "$PROMETHEUS_FIREWALL_FILE" 2>/dev/null | tail -n 1
 }
 
+
+set_config_permissions() {
+  [ -f "$CONFIG_FILE" ] || return 0
+  chown root:telemon "$CONFIG_FILE" 2>/dev/null || true
+  chmod 0640 "$CONFIG_FILE"
+}
+
 config_value() {
   local section="$1"
   local key="$2"
@@ -389,6 +396,7 @@ install -d -m 0755 "$CONFIG_DIR"
 install -d -m 0750 -o telemon -g telemon "$STATE_DIR"
 ensure_registration_config_shape
 configure_registration_config
+set_config_permissions
 resolve_prometheus_ip
 if [ -z "${TELEMON_REGISTRY_SERVER:-}" ] && ! registration_is_enabled; then
   cat >&2 <<'MESSAGE'

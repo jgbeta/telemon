@@ -128,6 +128,12 @@ if [ ! -x "$SOURCE_BINARY" ]; then
   exit 1
 fi
 
+set_config_permissions() {
+  [ -f "$CONFIG_FILE" ] || return 0
+  chown root:telemon "$CONFIG_FILE" 2>/dev/null || true
+  chmod 0640 "$CONFIG_FILE"
+}
+
 firewall_scrape_port() {
   local port
   port="$(awk '
@@ -464,7 +470,8 @@ diagnostics:
 logging:
   level: "info"
 CONFIG
-    chmod 0644 "$CONFIG_FILE"
+    chmod 0640 "$CONFIG_FILE"
+    chown root:telemon "$CONFIG_FILE" 2>/dev/null || true
   fi
 fi
 
@@ -473,6 +480,7 @@ sed 's|/usr/bin/telemon-exporter|/usr/local/bin/telemon-exporter|' \
 chmod 0644 "$UNIT_FILE"
 ensure_registration_config_shape
 configure_registration_config
+set_config_permissions
 configure_ufw_for_prometheus "$PROMETHEUS_SERVER_IP"
 systemctl daemon-reload
 systemctl enable --now telemon-exporter.service
